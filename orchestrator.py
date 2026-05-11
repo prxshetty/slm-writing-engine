@@ -127,7 +127,6 @@ class StoryOrchestrator:
             background=scene_blueprint.suggested_setting,
             characters=scene_blueprint.characters or characters,
             setting=scene_blueprint.suggested_setting,
-            tone=scene_blueprint.tone or "neutral",
             previous_scene_summary=previous_summary,
             character_profiles=char_profiles,
             character_states=char_states,
@@ -163,7 +162,6 @@ class StoryOrchestrator:
             id=str(uuid.uuid4()),
             act_number=act_number,
             scene_number=scene_blueprint.scene_number,
-            arc=scene_blueprint.arc or "",
             setting=setting_draft,
             dialogue=dialogue_draft,
             characters_present=scene_blueprint.characters or characters,
@@ -203,7 +201,6 @@ class StoryOrchestrator:
             background=scene_blueprint.suggested_setting,
             characters=scene_blueprint.characters or characters,
             setting=scene_blueprint.suggested_setting,
-            tone=scene_blueprint.tone or "neutral",
             previous_scene_summary=previous_summary,
             character_profiles=char_profiles,
             character_states=char_states,
@@ -247,7 +244,6 @@ class StoryOrchestrator:
             id=str(uuid.uuid4()),
             act_number=act_number,
             scene_number=scene_blueprint.scene_number,
-            arc=scene_blueprint.arc or "",
             setting=setting_draft,
             dialogue=dialogue_draft,
             characters_present=scene_blueprint.characters or characters,
@@ -268,7 +264,6 @@ class StoryOrchestrator:
 
         for scene in act.scenes:
             print(f"\n[Scene {scene.scene_number}]")
-            print(f"Arc: {scene.arc}")
             print(f"Setting: {scene.setting[:80] if scene.setting else 'N/A'}...")
             print("-" * 40)
             print(scene.full_content)
@@ -285,5 +280,5 @@ class StoryOrchestrator:
         summaries = []
         for act in previous_acts:
             for scene in act.scenes:
-                summaries.append(scene.arc)
+                summaries.append(scene.scene_description)
         return " | ".join(summaries)

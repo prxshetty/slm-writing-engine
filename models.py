@@ -39,7 +39,6 @@ class SceneBlueprint:
     characters: List[str] = field(default_factory=list)
     scene_description: str = ""
     creative_element: str = ""
-    tone: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -60,7 +59,6 @@ class SceneBlueprint:
             "characters": self.characters,
             "scene_description": self.scene_description,
             "creative_element": self.creative_element,
-            "tone": self.tone,
         }
         result.update(self.extra)
         return result
@@ -69,7 +67,7 @@ class SceneBlueprint:
     def from_dict(cls, data: dict) -> "SceneBlueprint":
         known_fields = {
             "scene_number", "suggested_setting", "characters",
-            "scene_description", "creative_element", "tone"
+            "scene_description", "creative_element"
         }
         kwargs = {}
         extra = {}
@@ -152,7 +150,6 @@ class Scene:
     id: str
     act_number: int
     scene_number: int
-    arc: str
     setting: str = ""
     characters_present: List[str] = field(default_factory=list)
     dialogue: str = ""
