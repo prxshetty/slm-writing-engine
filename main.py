@@ -27,7 +27,6 @@ def _save_scene_drafts(scene, agent_logs, act_number):
     final_file = act_dir / f"scene-{scene.scene_number}-final.json"
     final_data = {
         "scene_number": scene.scene_number,
-        "arc": scene.arc,
         "full_content": scene.full_content,
         "characters_present": scene.characters_present,
         "setting": scene.setting,
@@ -140,8 +139,6 @@ def main():
         for scene_index, scene_blueprint in enumerate(act_blueprint.scenes):
             print(f"\n{'─'*40}")
             print(f"Generating Scene {scene_blueprint.scene_number} of {act_blueprint.act_theme}...")
-            print(f"Arc: {scene_blueprint.arc}")
-            print(f"Tone: {scene_blueprint.tone}")
 
             try:
                 scene, agent_logs = orchestrator.generate_scene_with_writing(
