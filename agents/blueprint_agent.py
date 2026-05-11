@@ -163,7 +163,6 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
             print(f"{'─'*40}")
             for scene in act.scenes:
                 print(f"  Scene {scene.scene_number}: {scene.scene_description}")
-                print(f"    Tone: {scene.tone}")
                 print(f"    Setting: {scene.suggested_setting}")
                 chars = scene.characters if scene.characters else "All"
                 print(f"    Characters: {', '.join(chars)}")
@@ -195,7 +194,6 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
 
                 lines.append(f"\n  Scene {scene.scene_number}: {scene.scene_description}")
                 lines.append(f"    Setting: {scene.suggested_setting}")
-                lines.append(f"    Tone: {scene.tone}")
                 lines.append(f"    Characters: {chars_str}")
 
                 if scene.creative_element:
