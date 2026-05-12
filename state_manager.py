@@ -267,10 +267,22 @@ def parse_chapter_file(file_path: Path) -> Dict[str, Any]:
     )
     outline = outline_section.group(1).strip() if outline_section else ""
 
+    genre_section = re.search(
+        r"##\s+Genre\s*\n(.*?)(?:\n##|\Z)", content, re.DOTALL | re.IGNORECASE
+    )
+    genre = genre_section.group(1).strip() if genre_section else ""
+
+    tone_section = re.search(
+        r"##\s+Tone Guidelines\s*\n(.*?)(?:\n##|\Z)", content, re.DOTALL | re.IGNORECASE
+    )
+    tone_guidelines = tone_section.group(1).strip() if tone_section else ""
+
     return {
         "title": title,
         "characters": characters,
         "background": background,
         "outline": outline,
+        "genre": genre,
+        "tone_guidelines": tone_guidelines,
         "file_path": str(file_path),
     }

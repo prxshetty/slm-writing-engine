@@ -16,6 +16,8 @@ class StoryContext:
     background: str = ""
     characters: List[str] = field(default_factory=list)
     setting: str = ""
+    genre: str = ""
+    tone_guidelines: str = ""
     prior_scenes_context: List[str] = field(default_factory=list)
     generated_content: Dict[str, str] = field(default_factory=dict)
     character_profiles: Dict[str, Dict] = field(default_factory=dict)

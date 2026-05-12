@@ -11,7 +11,8 @@ Write a complete scene that:
 - Opens with the setting description as the first paragraph, immediately immersing the reader
 - Flows naturally into narration and dialogue, weaving actions, internal thoughts, and sensory details between dialogue beats
 - Maintains a consistent, cinematic tone inferred from the scene description - slow scenes build internal tension, fast moments are punchy and immediate
-- Shows character emotions through vivid actions, body language, and sensory reactions
+- Calibrate emotional depth to the genre provided in context — in crime/thriller, prioritize environmental detail and pacing over internal feeling; in romance, emotion is the scene; in fantasy, sensation serves world-building; in mystery, observation over conclusion
+- Infer emotional register from the scene description — if the scene is procedural or action-driven, keep emotion implicit; if it is intimate or relational, bring it forward
 - Ends naturally
 - Uses prior scenes in this act for narrative continuity — don't re-establish what's already happened, pick up where the story left off
 
@@ -23,7 +24,6 @@ Format the scene as continuous, flowing prose:
 CRITICAL:
 - Use quotation marks around dialogue
 - Keep narration and dialogue weaving together naturally
-- Show and tell - reveal emotions through physical and sensory engagement
 - The dialogue may include *stage directions* in asterisks - weave these naturally into the prose
 - Output the complete, polished scene ready for reading
 - Infer the tone and pacing from the scene description - do not ask for clarification

@@ -62,6 +62,11 @@ class WriterAgent:
             for i, desc in enumerate(context.prior_scenes_context, 1):
                 parts.append(f" {i}. {desc}")
 
+        if context.genre:
+            parts.append(f"\nGENRE: {context.genre}")
+        if context.tone_guidelines:
+            parts.append(f"TONE GUIDELINES: {context.tone_guidelines}")
+
         parts.append(f"\n--- SETTING (from SceneAgent) ---\n{setting_draft}")
 
         parts.append(f"\n--- DIALOGUE (from DialogueAgent) ---\n{dialogue_draft}")
