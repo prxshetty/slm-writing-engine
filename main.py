@@ -207,8 +207,8 @@ def main():
                 if scene_index < len(act_blueprint.scenes) - 1:
                     next_scene = act_blueprint.scenes[scene_index + 1]
                     scene.transition = orchestrator.transition_agent.generate_scene_transition(
-                        current_arc=scene_blueprint.scene_description,
-                        next_arc=next_scene.scene_description,
+                        current_scene=scene_blueprint.scene_description,
+                        next_scene=next_scene.scene_description,
                     )
             else:
                 print(f"Scene {scene.scene_number} skipped.")
@@ -217,7 +217,7 @@ def main():
         next_act_blueprint = blueprint.acts[act_index + 1] if not is_last_act else None
         act_transition = orchestrator.transition_agent.generate_act_transition(
             current_act_summary=act_blueprint.act_transition_hint or "",
-            next_act_arc=next_act_blueprint.scenes[0].scene_description if next_act_blueprint else "",
+            next_act_opening=next_act_blueprint.scenes[0].scene_description if next_act_blueprint else "",
             is_cliffhanger=not is_last_act,
         )
 

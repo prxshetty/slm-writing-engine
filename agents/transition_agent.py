@@ -17,14 +17,12 @@ class TransitionAgent:
 
     def generate_scene_transition(
         self,
-        current_arc: str,
-        next_arc: str,
-        tone: str = "neutral",
+        current_scene: str,
+        next_scene: str,
     ) -> str:
         user_prompt = f"""Type: Scene transition (bridge between two scenes)
-Current scene arc: {current_arc}
-Next scene arc: {next_arc}
-Tone: {tone}
+Current scene: {current_scene}
+Next scene: {next_scene}
 
 Write a 1-3 sentence bridge."""
         return self.client.generate_to_completion(
@@ -37,12 +35,12 @@ Write a 1-3 sentence bridge."""
     def generate_act_transition(
         self,
         current_act_summary: str,
-        next_act_arc: str,
+        next_act_opening: str,
         is_cliffhanger: bool = True,
     ) -> str:
         user_prompt = f"""Type: Act transition (end of an act)
 Current act summary: {current_act_summary}
-Next act begins with: {next_act_arc}
+Next act begins with: {next_act_opening}
 Cliffhanger needed: {is_cliffhanger}
 
 Write a 2-4 sentence transition that {'creates a hook or cliffhanger' if is_cliffhanger else 'provides smooth continuity'}."""
