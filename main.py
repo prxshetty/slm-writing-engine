@@ -2,6 +2,7 @@
 Main CLI entry point — orchestrates scene-by-scene story generation with approval steps.
 """
 
+import re
 from state_manager import StateManager, find_latest_chapter, parse_chapter_file
 from orchestrator import StoryOrchestrator
 from agents.blueprint_agent import BlueprintAgent
@@ -52,6 +53,11 @@ def main():
         print("Please create a chapter markdown file (e.g., inputs/chapters/chapter-1.md)")
         return
 
+    chapter_number = 1
+    chapter_match = re.search(r"(\d+)", latest_chapter.stem)
+    if chapter_match:
+        chapter_number = int(chapter_match.group(1))
+
     chapter_info = parse_chapter_file(latest_chapter)
     print(f"Loaded: {chapter_info['title']}")
     print(f"Characters: {', '.join(chapter_info['characters']) or 'None'}")
@@ -61,6 +67,8 @@ def main():
     characters = chapter_info["characters"]
     background = chapter_info["background"]
     user_outline = chapter_info["outline"]
+    genre = chapter_info.get("genre", "")
+    tone_guidelines = chapter_info.get("tone_guidelines", "")
 
     if not user_outline.strip():
         print("Error: Chapter outline cannot be empty.")
@@ -73,16 +81,38 @@ def main():
     blueprint_agent = BlueprintAgent()
     state_manager = StateManager()
 
-    try:
-        blueprint = blueprint_agent.generate(
-            chapter_title=chapter_title,
-            user_outline=user_outline.strip(),
-            characters=characters,
-            background=background,
-        )
-    except Exception as e:
-        print(f"\nError generating blueprint: {e}")
+    user_answers = ""
+    for attempt in range(3):
+        try:
+            result = blueprint_agent.generate(
+                chapter_title=chapter_title,
+                user_outline=user_outline.strip(),
+                characters=characters,
+                background=background,
+                user_answers=user_answers,
+            )
+        except Exception as e:
+            print(f"\nError generating blueprint: {e}")
+            return
+
+        if isinstance(result, list):
+            print("\nThe blueprint agent needs clarification:")
+            for q in result:
+                print(f"  ? {q}")
+            user_answers = input("\nYour answers: ").strip()
+            continue
+
+        blueprint = result
+        break
+    else:
+        print("Too many clarification rounds. Exiting.")
         return
+
+    warnings = blueprint_agent.structural_check(blueprint, characters)
+    if warnings:
+        print("\nBlueprint structure warnings:")
+        for w in warnings:
+            print(f"  ! {w}")
 
     blueprint_agent.print_blueprint(blueprint)
 
@@ -110,6 +140,11 @@ def main():
         print("Invalid input. Exiting.")
         return
 
+    blueprint_path = Path(f"outputs/results/chapter_{chapter_number}_blueprint.json")
+    blueprint_path.parent.mkdir(parents=True, exist_ok=True)
+    blueprint_path.write_text(json.dumps(blueprint.to_dict(), indent=2))
+    print(f"  Blueprint saved to: {blueprint_path}")
+
     print("\n" + "=" * 60)
     print("Step 3: Scene Walkthrough")
     print("=" * 60)
@@ -127,6 +162,18 @@ def main():
     orchestrator = StoryOrchestrator(state_manager=state_manager)
     story_state = state_manager.read_story_state()
 
+    prev_chapter_bridge = None
+    if chapter_number > 1:
+        prev_path = Path(f"outputs/results/chapter_{chapter_number - 1}_blueprint.json")
+        if prev_path.exists():
+            with open(prev_path) as f:
+                prev_data = json.load(f)
+            prev_acts = prev_data.get("acts", [])
+            if prev_acts and prev_acts[-1].get("scenes"):
+                from models import ActBlueprint
+                prev_act = ActBlueprint.from_dict(prev_acts[-1])
+                prev_chapter_bridge = orchestrator._build_act_bridge(prev_act)
+
     for act_index, act_blueprint in enumerate(blueprint.acts):
         print(f"\n{'='*60}")
         print(f"ACT {act_blueprint.act_number}: {act_blueprint.act_theme}")
@@ -134,7 +181,7 @@ def main():
         print(f"{'='*60}")
 
         prev_act_blueprint = blueprint.acts[act_index - 1] if act_index > 0 else None
-        prev_act_bridge = orchestrator._build_act_bridge(prev_act_blueprint)
+        prev_act_bridge = prev_chapter_bridge if act_index == 0 and prev_chapter_bridge else orchestrator._build_act_bridge(prev_act_blueprint)
 
         act_scenes = []
 
@@ -150,6 +197,8 @@ def main():
                     characters=characters,
                     act_blueprint=act_blueprint,
                     prev_act_bridge=prev_act_bridge,
+                    genre=genre,
+                    tone_guidelines=tone_guidelines,
                     story_state=story_state,
                 )
             except Exception as e:
@@ -181,6 +230,8 @@ def main():
                         characters=characters,
                         act_blueprint=act_blueprint,
                         prev_act_bridge=prev_act_bridge,
+                        genre=genre,
+                        tone_guidelines=tone_guidelines,
                         feedback=feedback,
                         story_state=story_state,
                         setting_draft=scene.setting,
