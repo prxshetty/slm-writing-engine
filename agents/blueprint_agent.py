@@ -3,8 +3,10 @@ Blueprint Agent — generates chapter structure from user's narrative descriptio
 """
 
 import json
+import re
 import llm
 import config
+from typing import List, Optional, Union
 from models import ChapterBlueprint, ActBlueprint, SceneBlueprint
 from schema_loader import SchemaLoader
 
@@ -25,13 +27,15 @@ class BlueprintAgent:
         user_outline: str,
         characters: list[str],
         background: str = "",
-    ) -> ChapterBlueprint:
-        """Generate chapter blueprint from user input."""
+        user_answers: str = "",
+    ) -> Union[ChapterBlueprint, List[str]]:
+        """Generate chapter blueprint from user input, or return clarifying questions."""
         user_prompt = self._build_prompt(
             chapter_title=chapter_title,
             user_outline=user_outline,
             characters=characters,
             background=background,
+            user_answers=user_answers,
         )
 
         response = self.client.generate_to_completion(
@@ -41,8 +45,11 @@ class BlueprintAgent:
             max_tokens=self.token_limit,
         )
 
-        blueprint = self._parse_response(response)
-        return blueprint
+        questions = self._extract_questions(response)
+        if questions:
+            return questions
+
+        return self._parse_response(response)
 
     def regenerate(
         self,
@@ -98,6 +105,7 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
         user_outline: str,
         characters: list[str],
         background: str,
+        user_answers: str = "",
     ) -> str:
         parts = [
             f"Chapter Title: {chapter_title}",
@@ -106,6 +114,8 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
         if background:
             parts.append(f"Background: {background}")
         parts.append(f"\nUser's Chapter Description:\n{user_outline}")
+        if user_answers:
+            parts.append(f"\nAdditional context from user:\n{user_answers}")
         parts.append("\nGenerate the chapter structure (acts and scenes) based on this description.")
         return "\n".join(parts)
 
@@ -148,6 +158,49 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
                 return act
 
         return ActBlueprint(act_number=act_number, act_theme="", scenes=[])
+
+    def _extract_questions(self, response: str) -> Optional[List[str]]:
+        """If the LLM returned clarifying questions instead of JSON, extract them."""
+        stripped = response.strip()
+        if not stripped:
+            return None
+        try:
+            json.loads(stripped)
+            return None
+        except (json.JSONDecodeError, ValueError):
+            pass
+        lines = stripped.strip().split("\n")
+        questions = []
+        for line in lines:
+            line = line.strip()
+            line = re.sub(r"^(?:\d+[\.\)]\s*|[-*]\s*)", "", line).strip()
+            if line and "?" in line:
+                questions.append(line)
+        return questions if questions else None
+
+    def structural_check(
+        self, blueprint: ChapterBlueprint, characters: list[str]
+    ) -> List[str]:
+        """Run objective structural checks on the blueprint."""
+        warnings = []
+        total_scenes = sum(len(act.scenes) for act in blueprint.acts)
+        if total_scenes == 0:
+            warnings.append("Blueprint has no scenes.")
+        for char in characters:
+            found = False
+            for act in blueprint.acts:
+                for scene in act.scenes:
+                    if scene.characters and char.lower() in [c.lower() for c in scene.characters]:
+                        found = True
+                        break
+                if found:
+                    break
+            if not found:
+                warnings.append(f"Character '{char}' does not appear in any scene.")
+        for act in blueprint.acts:
+            if len(act.scenes) == 0:
+                warnings.append(f"Act {act.act_number} has no scenes.")
+        return warnings
 
     def print_blueprint(self, blueprint: ChapterBlueprint) -> None:
         """Pretty print a blueprint for user approval."""
