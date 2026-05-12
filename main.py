@@ -203,17 +203,23 @@ def main():
                 act_scenes.append(scene)
                 _save_scene_drafts(scene, agent_logs, act_blueprint.act_number)
                 print(f"Scene {scene.scene_number} approved.")
+
+                if scene_index < len(act_blueprint.scenes) - 1:
+                    next_scene = act_blueprint.scenes[scene_index + 1]
+                    scene.transition = orchestrator.transition_agent.generate_scene_transition(
+                        current_arc=scene_blueprint.scene_description,
+                        next_arc=next_scene.scene_description,
+                    )
             else:
                 print(f"Scene {scene.scene_number} skipped.")
 
-        if len(act_blueprint.scenes) > 1 and len(act_scenes) > 1:
-            act_transition = orchestrator.transition_agent.generate_act_transition(
-                current_act_summary=act_scenes[-1].full_content[:200] if act_scenes[-1].full_content else "",
-                next_act_arc="continuation",
-                is_cliffhanger=True,
-            )
-        else:
-            act_transition = None
+        is_last_act = act_index == len(blueprint.acts) - 1
+        next_act_blueprint = blueprint.acts[act_index + 1] if not is_last_act else None
+        act_transition = orchestrator.transition_agent.generate_act_transition(
+            current_act_summary=act_blueprint.act_transition_hint or "",
+            next_act_arc=next_act_blueprint.scenes[0].scene_description if next_act_blueprint else "",
+            is_cliffhanger=not is_last_act,
+        )
 
         from models import Act
         act = Act(id=str(uuid.uuid4()) if 'uuid' in dir() else str(hash(str(act_index))), act_number=act_blueprint.act_number)
