@@ -9,8 +9,9 @@ A local-first, multi-agent story generation framework designed for SLMs (Small L
 - **Feedback loops**: Approve or regenerate scenes with natural language feedback
 - **Schema-driven**: Customize fields without touching code
 - **Genre-aware**: Set genre and tone guidelines in your chapter file — the writer agent calibrates emotional depth and pacing accordingly
-- **Scene-level control**: Emotional register is inferred from each scene's description, so even within a genre individual scenes can deviate
-- **Debug drafts**: Per-scene agent inputs/outputs saved for inspection
+- **Writing Focus**: Mark scenes as high-focus or functional — creative_element signals the writer to go deep or stay efficient, no inference needed
+- **Scene-level control**: Each scene's description drives emotional register, so even within a genre individual scenes can deviate
+- **Debug drafts**: Full scene context saved per agent — input prompts, system prompts, and outputs all logged per scene
 
 ## Quick Start
 
@@ -89,7 +90,7 @@ slm-writing-engine/
 - Kaelen
 - Lena
 
-## Background
+## Background/Setting
 (Optional context about setting, time period, etc.)
 
 ## Genre
@@ -100,11 +101,18 @@ Crime / Thriller
 - Show detective competence through action, not feeling
 - Emotion only when plot-relevant
 
-## Outline
+## Writing Focus
+- Crime scene: maximum detail, forensic and sensory — creative_element: the blood spatter pattern on the wall
+- Interrogation: character voice priority
+- Travel/transition: functional, one paragraph maximum
+
+## Chapter Outline
 A detailed description of what happens in this chapter. Include emotional beats, character interactions, and key moments. This drives the entire generation.
 ```
 
 ### Character Profile (`inputs/characters/name.yaml`)
+
+Character YAML files must use a **first-name prefix** of the character name used in the chapter. For example, "Elara Vance" in the chapter file will match `elara.yaml` or `elara_vance.yaml`. Parenthetical roles like `(Protagonist)` are stripped automatically.
 
 ```yaml
 name: Elara
@@ -138,10 +146,10 @@ fields:
   scene_number:
     type: int
     required: true
-  suggested_setting:
+  scene_setting:
     type: str
     required: true
-    description: "Physical location, time, atmosphere"
+    description: "Short canonical location tag only (e.g. 'kitchen', 'gym', 'police station'). No atmosphere, no detail — the Scene Agent handles that."
   characters:
     type: list[str]
     required: true
@@ -161,7 +169,7 @@ fields:
 ```yaml
 dialogue_agent:
   - scene_description
-  - suggested_setting
+  - scene_setting
   - characters
 
 writer_agent:
@@ -261,7 +269,7 @@ Final approved content - one file per act.
 
 **No chapters found**: Create a `.md` file in `inputs/chapters/`
 
-**Character profiles not loading**: YAML files must be lowercase (e.g., `elara.yaml`)
+**Character profiles not loading**: Profile YAML filename must be a prefix of the character name in the chapter (e.g., `elara.yaml` matches "Elara Vance"). Parenthetical annotations like `(Protagonist)` are ignored.
 
 **Model not responding**: Check LM Studio is running and model is loaded
 

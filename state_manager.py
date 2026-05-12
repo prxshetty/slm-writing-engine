@@ -41,8 +41,19 @@ class StateManager:
     def get_character_profile(self, character_name: str) -> Optional[Dict]:
         """Read a single character YAML file."""
         yaml_path = self.characters_dir / f"{character_name.lower()}.yaml"
-        if not yaml_path.exists():
-            return None
+        if yaml_path.exists():
+            with open(yaml_path, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f)
+
+        for fpath in self.characters_dir.glob("*.yaml"):
+            if fpath.stem == "character_template":
+                continue
+            stem = fpath.stem.lower()
+            if character_name.lower().startswith(stem) or stem.startswith(character_name.lower()):
+                with open(fpath, "r", encoding="utf-8") as f:
+                    return yaml.safe_load(f)
+
+        return None
 
         with open(yaml_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
@@ -254,6 +265,7 @@ def parse_chapter_file(file_path: Path) -> Dict[str, Any]:
             re.MULTILINE,
         )
         characters = [c.strip() for c in char_lines if c.strip()]
+        characters = [re.sub(r"\s*\([^)]*\)", "", c).strip() for c in characters]
 
     bg_section = re.search(
         r"##\s+Background(?:/Setting)?\s*\n(.*?)(?:\n##|\Z)",
@@ -276,6 +288,11 @@ def parse_chapter_file(file_path: Path) -> Dict[str, Any]:
         r"##\s+Tone Guidelines\s*\n(.*?)(?:\n##|\Z)", content, re.DOTALL | re.IGNORECASE
     )
     tone_guidelines = tone_section.group(1).strip() if tone_section else ""
+
+    focus_section = re.search(
+        r"##\s+Writing Focus\s*\n(.*?)(?:\n##|\Z)", content, re.DOTALL | re.IGNORECASE
+    )
+    writing_focus = focus_section.group(1).strip() if focus_section else ""
 
     return {
         "title": title,
