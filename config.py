@@ -55,24 +55,13 @@ def _build_blueprint_prompt() -> str:
 
 
 def _build_agent_prompts() -> dict:
-    """Build agent prompts that reference schema fields."""
-    prompts = {}
-
-    prompts["scene"] = _load_prompt("scene.txt")
-
-    prompts["dialogue"] = _load_prompt("dialogue.txt").replace(
-        "{FIELD_LIST}", SCHEMA.generate_field_list_for_agent("dialogue_agent")
-    )
-
-    prompts["transition"] = _load_prompt("transition.txt").replace(
-        "{FIELD_LIST}", SCHEMA.generate_field_list_for_agent("transition_agent")
-    )
-
-    prompts["writer"] = _load_prompt("writer.txt").replace(
-        "{FIELD_LIST}", SCHEMA.generate_field_list_for_agent("writer_agent")
-    )
-
-    return prompts
+    """Build agent prompts."""
+    return {
+        "scene": _load_prompt("scene.txt"),
+        "dialogue": _load_prompt("dialogue.txt"),
+        "transition": _load_prompt("transition.txt"),
+        "writer": _load_prompt("writer.txt"),
+    }
 
 
 SYSTEM_PROMPTS = {

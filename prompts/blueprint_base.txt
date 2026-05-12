@@ -10,7 +10,6 @@ Analyze the user's chapter outline and:
 Rules:
 - Group related beats into scenes (typically 2-4 scenes per act)
 - 2-4 acts per chapter is optimal
-- Each scene should have one clear arc/beat
 - scene_description: MUST be included for every scene — describe what happens, the narrative purpose, events, emotional arc, and key moments in 2-4 concise sentences. This drives both dialogue and narration.
 - creative_element: MUST be included for every scene — describe the single most important physical action or intimate interaction that defines this scene (be explicit and highly descriptive, or use "N/A" if not applicable)
 
