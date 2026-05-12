@@ -34,20 +34,11 @@ class DialogueAgent:
         if context.character_profiles:
             parts.append("\nCHARACTER PROFILES:")
             for name, profile in context.character_profiles.items():
-                traits = profile.get("traits") or []
-                goals = profile.get("goals") or []
-                flaws = profile.get("flaws") or []
                 current_state = context.character_states.get(name) or ""
 
                 parts.append(f"  - {name}:")
                 if profile.get("description"):
                     parts.append(f"    Description: {profile['description']}")
-                if traits:
-                    parts.append(f"    Traits: {', '.join(traits)}")
-                if goals:
-                    parts.append(f"    Goals: {', '.join(goals)}")
-                if flaws:
-                    parts.append(f"    Flaws: {', '.join(flaws)}")
                 if current_state:
                     parts.append(f"    Current state: {current_state}")
 
