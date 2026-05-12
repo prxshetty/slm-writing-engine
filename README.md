@@ -9,7 +9,7 @@ A local-first, multi-agent story generation framework designed for SLMs (Small L
 - **Feedback loops**: Approve or regenerate scenes with natural language feedback
 - **Schema-driven**: Customize fields without touching code
 - **Genre-aware**: Set genre and tone guidelines in your chapter file — the writer agent calibrates emotional depth and pacing accordingly
-- **Writing Focus**: Mark scenes as high-focus or functional — creative_element signals the writer to go deep or stay efficient, no inference needed
+- **Scene Events**: Each scene includes an ordered beat-level checklist (`scene_events`) that both the Dialogue and Writer agents follow to keep the scene on track
 - **Scene-level control**: Each scene's description drives emotional register, so even within a genre individual scenes can deviate
 - **Debug drafts**: Full scene context saved per agent — input prompts, system prompts, and outputs all logged per scene
 
@@ -102,7 +102,7 @@ Crime / Thriller
 - Emotion only when plot-relevant
 
 ## Writing Focus
-- Crime scene: maximum detail, forensic and sensory — creative_element: the blood spatter pattern on the wall
+- Crime scene: maximum detail, forensic and sensory
 - Interrogation: character voice priority
 - Travel/transition: functional, one paragraph maximum
 
@@ -153,11 +153,11 @@ fields:
     type: str
     required: true
     description: "What happens - events, emotional arc, key moments"
-  creative_element:
-    type: str
+  scene_events:
+    type: list[str]
     required: false
-    description: "Key physical action/interaction"
-    default: ""
+    description: "Ordered beat-by-beat structural checklist for Dialogue and Writer agents"
+    default: []
 ```
 
 ### `schema/agents.yaml` - What Each Agent Gets

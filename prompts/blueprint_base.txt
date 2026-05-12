@@ -13,10 +13,8 @@ Requirements:
 group related beats naturally
 every scene must include:
 - scene_setting: location tag only, 2-3 words maximum
-- scene_description: 2–4 concise sentences covering events, purpose, emotional movement, and key moments
-
-Optional fields (only for high-focus scenes):
-- creative_element: the single physical action or intimate detail this scene centers on. Only populate for scenes the Writing Focus marks as high-focus. For functional or transitional scenes, omit this field entirely — do not set it to "N/A", just leave it out of the JSON. The writer agent uses the presence of this field as a signal to go deep.
+- scene_description: 2–4 concise sentences covering narrative purpose and emotional movement
+- scene_events: 2–6 ordered beat-level events that break the scene into a step-by-step sequence. Simple scenes: 2–4 events. Complex scenes: 4–6 events. Every scene needs this — it's the Writer and Dialogue agents' structural checklist.
 
 Before generating the JSON, read the chapter outline. If it is missing critical
 information (character motivations, location details, how characters get from

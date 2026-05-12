@@ -21,8 +21,8 @@ fields:
     required: true
     description: "What happens in this scene - the narrative purpose, events in 2-4 concise sentences. This drives both dialogue and narration."
 
-  creative_element:
-    type: str
+  scene_events:
+    type: list[str]
     required: false
-    description: "The single, most important, detailed physical action or intimate interaction that defines this scene. This must be explicit and highly descriptive. If no specific physical action is the focus, this should be left empty or marked as 'N/A'."
-    default: ""
+    default: []
+    description: "Ordered beat-by-beat structural checklist. Unlike scene_description (narrative purpose / WHY), this is the WHAT-HAPPENS-NEXT sequence the agents must follow. Simple scenes: 2-4 events. Complex scenes: 4-6 events."

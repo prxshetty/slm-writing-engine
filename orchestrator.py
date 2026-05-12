@@ -129,10 +129,7 @@ class StoryOrchestrator:
                 char_profiles[name] = ctx["profile"]
                 char_states[name] = ctx["current_state"]
 
-        prior = [
-            f"{s.scene_description}{' [' + s.creative_element + ']' if s.creative_element and s.creative_element.strip() and s.creative_element != 'N/A' else ''}"
-            for s in act_blueprint.scenes[:scene_index]
-        ]
+        prior = [s.scene_description for s in act_blueprint.scenes[:scene_index]]
         if scene_index == 0 and prev_act_bridge:
             prior = [prev_act_bridge] + prior
 
@@ -147,7 +144,6 @@ class StoryOrchestrator:
             genre=genre,
             tone_guidelines=tone_guidelines,
             writing_focus=writing_focus,
-            creative_element=scene_blueprint.creative_element,
             prior_scenes_context=prior,
             character_profiles=char_profiles,
             character_states=char_states,
@@ -185,7 +181,6 @@ class StoryOrchestrator:
                 "genre": scene_context.genre,
                 "tone_guidelines": scene_context.tone_guidelines,
                 "writing_focus": scene_context.writing_focus,
-                "creative_element": scene_context.creative_element,
                 "prior_scenes_context": scene_context.prior_scenes_context,
                 "character_profiles": scene_context.character_profiles,
                 "character_states": scene_context.character_states,
@@ -238,10 +233,7 @@ class StoryOrchestrator:
                 char_profiles[name] = ctx["profile"]
                 char_states[name] = ctx["current_state"]
 
-        prior = [
-            f"{s.scene_description}{' [' + s.creative_element + ']' if s.creative_element and s.creative_element.strip() and s.creative_element != 'N/A' else ''}"
-            for s in act_blueprint.scenes[:scene_index]
-        ]
+        prior = [s.scene_description for s in act_blueprint.scenes[:scene_index]]
         if scene_index == 0 and prev_act_bridge:
             prior = [prev_act_bridge] + prior
 
@@ -256,7 +248,6 @@ class StoryOrchestrator:
             genre=genre,
             tone_guidelines=tone_guidelines,
             writing_focus=writing_focus,
-            creative_element=scene_blueprint.creative_element,
             prior_scenes_context=prior,
             character_profiles=char_profiles,
             character_states=char_states,
@@ -302,7 +293,6 @@ class StoryOrchestrator:
                 "genre": scene_context.genre,
                 "tone_guidelines": scene_context.tone_guidelines,
                 "writing_focus": scene_context.writing_focus,
-                "creative_element": scene_context.creative_element,
                 "prior_scenes_context": scene_context.prior_scenes_context,
                 "character_profiles": scene_context.character_profiles,
                 "character_states": scene_context.character_states,
@@ -352,7 +342,5 @@ class StoryOrchestrator:
         if prev_act_blueprint and prev_act_blueprint.scenes:
             last = prev_act_blueprint.scenes[-1]
             bridge = last.scene_description
-            if last.creative_element and last.creative_element.strip() and last.creative_element != "N/A":
-                bridge += f" [{last.creative_element}]"
             return bridge
         return None

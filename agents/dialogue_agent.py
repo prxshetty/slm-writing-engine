@@ -42,6 +42,11 @@ class DialogueAgent:
                 if current_state:
                     parts.append(f"    Current state: {current_state}")
 
+        if context.extra.get("scene_events"):
+            parts.append("\nSCENE EVENTS (must be covered in order):")
+            for i, event in enumerate(context.extra["scene_events"], 1):
+                parts.append(f"  {i}. {event}")
+
         if context.prior_scenes_context:
             parts.append("\nPRIOR SCENES IN THIS ACT:")
             for i, desc in enumerate(context.prior_scenes_context, 1):

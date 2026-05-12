@@ -223,9 +223,6 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
                 print(f"    Setting: {scene.scene_setting}")
                 chars = scene.characters if scene.characters else "All"
                 print(f"    Characters: {', '.join(chars)}")
-                if scene.creative_element:
-                    print(f"    Creative element: {scene.creative_element}")
-
                 extra = scene.extra
                 if extra:
                     for key, value in extra.items():
@@ -252,9 +249,6 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
                 lines.append(f"\n  Scene {scene.scene_number}: {scene.scene_description}")
                 lines.append(f"    Setting: {scene.scene_setting}")
                 lines.append(f"    Characters: {chars_str}")
-
-                if scene.creative_element:
-                    lines.append(f"    Creative element: {scene.creative_element}")
 
                 extra = scene.extra
                 if extra:

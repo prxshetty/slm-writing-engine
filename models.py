@@ -20,7 +20,6 @@ class StoryContext:
     genre: str = ""
     tone_guidelines: str = ""
     writing_focus: str = ""
-    creative_element: str = ""
     prior_scenes_context: List[str] = field(default_factory=list)
     generated_content: Dict[str, str] = field(default_factory=dict)
     character_profiles: Dict[str, Dict] = field(default_factory=dict)
@@ -40,7 +39,6 @@ class SceneBlueprint:
     scene_setting: str
     characters: List[str] = field(default_factory=list)
     scene_description: str = ""
-    creative_element: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -60,7 +58,6 @@ class SceneBlueprint:
             "scene_setting": self.scene_setting,
             "characters": self.characters,
             "scene_description": self.scene_description,
-            "creative_element": self.creative_element,
         }
         result.update(self.extra)
         return result
@@ -69,7 +66,7 @@ class SceneBlueprint:
     def from_dict(cls, data: dict) -> "SceneBlueprint":
         known_fields = {
             "scene_number",             "scene_setting", "characters",
-            "scene_description", "creative_element"
+            "scene_description"
         }
         kwargs = {}
         extra = {}

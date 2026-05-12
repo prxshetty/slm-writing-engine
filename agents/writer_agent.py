@@ -68,10 +68,12 @@ class WriterAgent:
             parts.append(f"TONE GUIDELINES: {context.tone_guidelines}")
         if context.chapter_background:
             parts.append(f"CHAPTER BACKGROUND:\n{context.chapter_background}")
-        if context.creative_element:
-            parts.append(f"CREATIVE ELEMENT: {context.creative_element}")
         if context.writing_focus:
             parts.append(f"WRITING FOCUS:\n{context.writing_focus}")
+        if context.extra.get("scene_events"):
+            parts.append("\nSCENE EVENTS (must be covered in order):")
+            for i, event in enumerate(context.extra["scene_events"], 1):
+                parts.append(f"  {i}. {event}")
 
         parts.append(f"\n--- SETTING (from SceneAgent) ---\n{setting_draft}")
 
