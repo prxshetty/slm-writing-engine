@@ -219,6 +219,7 @@ class StoryOrchestrator:
             required_agents = style_data.get("required_agents", [])
             writer_guidelines = style_data.get("writer_guidelines", "")
             dialogue_guidelines = style_data.get("dialogue_guidelines", "")
+            beat_token_limit = style_data.get("output_size")
 
             mode = "opening" if i == 0 else "closing" if i == len(events) - 1 else "continuation"
             beat_desc = event.get("beat", str(event)) if isinstance(event, dict) else str(event)
@@ -250,6 +251,7 @@ class StoryOrchestrator:
                 dialogue_for_beat=dialogue_for_beat,
                 writer_guidelines=writer_guidelines,
                 mode=mode,
+                token_limit=beat_token_limit,
             )
             beat_outputs.append(beat_text)
             writer_per_beat_logs.append({
@@ -403,6 +405,7 @@ class StoryOrchestrator:
             required_agents = style_data.get("required_agents", [])
             writer_guidelines = style_data.get("writer_guidelines", "")
             dialogue_guidelines = style_data.get("dialogue_guidelines", "")
+            beat_token_limit = style_data.get("output_size")
 
             mode = "opening" if i == 0 else "closing" if i == len(events) - 1 else "continuation"
             beat_desc = event.get("beat", str(event)) if isinstance(event, dict) else str(event)
@@ -432,6 +435,7 @@ class StoryOrchestrator:
                 writer_guidelines=writer_guidelines,
                 mode=mode,
                 feedback=feedback,
+                token_limit=beat_token_limit,
             )
             beat_outputs.append(beat_text)
             writer_per_beat_logs.append({

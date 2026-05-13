@@ -23,7 +23,7 @@ Requirements:
 - Follow writing style guidelines strictly — they define the author's voice
 - Use quotation marks for dialogue
 - Convert *stage directions* into natural prose/action
-- Use paragraph breaks only for major shifts
+- Use paragraph breaks where natural for flow and readability
 - Output polished prose only
 - No headers or meta commentary
 - For action/ambient/dream scenes: dialogue draft may be empty, rely on scene events and setting instead

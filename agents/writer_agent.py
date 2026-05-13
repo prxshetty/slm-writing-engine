@@ -5,6 +5,7 @@ The system prompt (writer.txt) defines the role; mode instructions are
 injected inline into the user prompt per beat.
 """
 
+from typing import Optional
 import llm
 import config
 from models import StoryContext
@@ -25,11 +26,7 @@ MODE_INTROS = {
     ),
 }
 
-MODE_TOKEN_LIMITS = {
-    "opening": 500,
-    "continuation": 400,
-    "closing": 500,
-}
+DEFAULT_TOKEN_LIMIT = 500
 
 MODE_CLOSING_NOTES = {
     "opening": "Do NOT conclude or summarize — the scene continues after this beat.",
@@ -58,12 +55,13 @@ class WriterAgent:
         writer_guidelines: str,
         mode: str,
         feedback: str = "",
+        token_limit: Optional[int] = None,
     ) -> str:
         """Generate a single beat of the scene."""
         beat_desc = beat.get("beat", "") if isinstance(beat, dict) else str(beat)
         beat_style = beat.get("style", "general") if isinstance(beat, dict) else "general"
 
-        token_limit = MODE_TOKEN_LIMITS.get(mode, 500)
+        token_limit = token_limit or DEFAULT_TOKEN_LIMIT
         intro = MODE_INTROS[mode].format(setting_draft=setting_draft, prev_tail=prev_tail)
         closing_note = MODE_CLOSING_NOTES[mode]
 

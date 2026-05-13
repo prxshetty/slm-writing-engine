@@ -5,7 +5,23 @@ Style Loader — loads style markdown files from inputs/styles/.
 import yaml
 import re
 from pathlib import Path
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, Union
+
+
+OUTPUT_SIZE_MAP = {
+    "concise": 250,
+    "balanced": 500,
+    "expansive": 1000,
+}
+
+
+def resolve_output_size(value: Union[str, int, None]) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    return OUTPUT_SIZE_MAP.get(str(value).lower())
+
 
 STYLES_DIR = Path(__file__).parent / "inputs" / "styles"
 STYLES_MD_PATH = STYLES_DIR / "STYLES.md"
@@ -129,9 +145,12 @@ def _parse_style_file(path: Path) -> Dict[str, Any]:
         r"## Dialogue Guidelines\s*\n(.*?)(?=\n##|\Z)", body, re.DOTALL
     )
 
+    raw_output_size = frontmatter.get("output_size")
+
     return {
         "description": frontmatter.get("description", ""),
         "required_agents": frontmatter.get("required_agents", []),
+        "output_size": resolve_output_size(raw_output_size),
         "writer_guidelines": writer_match.group(1).strip() if writer_match else "",
         "dialogue_guidelines": dialogue_match.group(1).strip() if dialogue_match else "",
     }
