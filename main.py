@@ -130,7 +130,7 @@ def main():
 
     chapter_info = parse_chapter_file(latest_chapter)
     print(f"Loaded: {chapter_info['title']}")
-    print(f"Characters: {', '.join(chapter_info['characters']) or 'None'}")
+    print(f"Characters: (inferred from text)")
     print(f"File: {chapter_info['file_path']}")
 
     chapter_title = chapter_info["title"] or "Untitled Chapter"
