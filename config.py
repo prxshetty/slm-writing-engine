@@ -24,9 +24,10 @@ LMSTUDIO = {
 AGENT_CONFIG = {
     "blueprint": {"max_tokens": 2000, "temperature": 0.9},
     "scene": {"max_tokens": 600, "temperature": 0.8},
-    "dialogue": {"max_tokens": 1000, "temperature": 0.85},
+    "dialogue": {"max_tokens": 800, "temperature": 0.85},
     "transition": {"max_tokens": 400, "temperature": 0.7},
     "writer": {"max_tokens": 1500, "temperature": 0.85},
+    "compiler": {"max_tokens": 300, "temperature": 0.35},
 }
 
 TOKEN_LIMITS = {key: cfg["max_tokens"] for key, cfg in AGENT_CONFIG.items()}
@@ -61,6 +62,7 @@ def _build_agent_prompts() -> dict:
         "dialogue": _load_prompt("dialogue.txt"),
         "transition": _load_prompt("transition.txt"),
         "writer": _load_prompt("writer.txt"),
+        "compiler": _load_prompt("compiler.txt"),
     }
 
 

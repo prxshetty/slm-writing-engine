@@ -6,7 +6,7 @@ import json
 import re
 import llm
 import config
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 from models import ChapterBlueprint, ActBlueprint, SceneBlueprint
 from schema_loader import SchemaLoader
 
@@ -29,6 +29,7 @@ class BlueprintAgent:
         background: str = "",
         user_answers: str = "",
         writing_focus: str = "",
+        writing_style_descriptions: Optional[Dict[str, str]] = None,
     ) -> Union[ChapterBlueprint, List[str]]:
         """Generate chapter blueprint from user input, or return clarifying questions."""
         user_prompt = self._build_prompt(
@@ -37,6 +38,8 @@ class BlueprintAgent:
             characters=characters,
             background=background,
             user_answers=user_answers,
+            writing_focus=writing_focus,
+            writing_style_descriptions=writing_style_descriptions,
         )
 
         response = self.client.generate_to_completion(
@@ -108,6 +111,7 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
         background: str,
         user_answers: str = "",
         writing_focus: str = "",
+        writing_style_descriptions: Optional[Dict[str, str]] = None,
     ) -> str:
         parts = [
             f"Chapter Title: {chapter_title}",
@@ -120,6 +124,12 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
         parts.append(f"\nUser's Chapter Description:\n{user_outline}")
         if user_answers:
             parts.append(f"\nAdditional context from user:\n{user_answers}")
+        if writing_style_descriptions:
+            parts.append("\n# Available Styles\n")
+            parts.append("Use these style tags when annotating scene_events.\n")
+            for name in sorted(writing_style_descriptions):
+                desc = writing_style_descriptions[name]
+                parts.append(f"- **{name}** — {desc}")
         parts.append("\nGenerate the chapter structure (acts and scenes) based on this description.")
         return "\n".join(parts)
 

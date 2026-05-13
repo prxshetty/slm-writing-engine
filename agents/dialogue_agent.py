@@ -1,5 +1,6 @@
 """
-Dialogue Agent — generates character conversations.
+Dialogue Agent — generates character dialogue for a single beat.
+Called per-beat when the beat's style requires dialogue.
 """
 
 import llm
@@ -8,7 +9,7 @@ from models import StoryContext
 
 
 class DialogueAgent:
-    """Generates character dialogue for scenes."""
+    """Generates character dialogue for a specific beat."""
 
     def __init__(self):
         self.client = llm.LLMClient()
@@ -16,8 +17,8 @@ class DialogueAgent:
         self.token_limit = config.TOKEN_LIMITS["dialogue"]
         self.temperature = config.AGENT_CONFIG["dialogue"]["temperature"]
 
-    def generate(self, context: StoryContext) -> str:
-        user_prompt = self._build_prompt(context)
+    def generate(self, context: StoryContext, beat_description: str, dialogue_guidelines: str) -> str:
+        user_prompt = self._build_prompt(context, beat_description, dialogue_guidelines)
         return self.client.generate_to_completion(
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
@@ -25,27 +26,25 @@ class DialogueAgent:
             max_tokens=self.token_limit,
         )
 
-    def _build_prompt(self, context: StoryContext) -> str:
+    def _build_prompt(self, context: StoryContext, beat_description: str, dialogue_guidelines: str) -> str:
         parts = [
             f"SCENE DESCRIPTION:\n{context.scene_description}",
             f"\nSUGGESTED SETTING:\n{context.setting}",
+            f"\nTHIS BEAT:\n{beat_description}",
         ]
+
+        if dialogue_guidelines:
+            parts.append(f"\nDIALOGUE GUIDELINES:\n{dialogue_guidelines}")
 
         if context.character_profiles:
             parts.append("\nCHARACTER PROFILES:")
             for name, profile in context.character_profiles.items():
                 current_state = context.character_states.get(name) or ""
-
                 parts.append(f"  - {name}:")
                 if profile.get("description"):
                     parts.append(f"    Description: {profile['description']}")
                 if current_state:
                     parts.append(f"    Current state: {current_state}")
-
-        if context.extra.get("scene_events"):
-            parts.append("\nSCENE EVENTS (must be covered in order):")
-            for i, event in enumerate(context.extra["scene_events"], 1):
-                parts.append(f"  {i}. {event}")
 
         if context.prior_scenes_context:
             parts.append("\nPRIOR SCENES IN THIS ACT:")

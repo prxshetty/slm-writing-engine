@@ -31,12 +31,10 @@ class SceneAgent:
             f"\nSUGGESTED SETTING:\n{context.setting or context.background}",
         ]
 
-        if context.extra.get("scene_type"):
-            parts.append(f"\nSCENE TYPE: {context.extra['scene_type']}")
-
         if context.extra.get("scene_events"):
             parts.append("\nSCENE EVENTS (ordered beats):")
             for i, event in enumerate(context.extra["scene_events"], 1):
-                parts.append(f"  {i}. {event}")
+                desc = event.get("beat", event) if isinstance(event, dict) else event
+                parts.append(f"  {i}. {desc}")
 
         return "\n".join(parts)

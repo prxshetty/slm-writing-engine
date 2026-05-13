@@ -6,6 +6,7 @@ import re
 from state_manager import StateManager, find_latest_chapter, parse_chapter_file
 from orchestrator import StoryOrchestrator
 from agents.blueprint_agent import BlueprintAgent
+from style_loader import load_all_styles, generate_styles_md, read_styles_md
 from pathlib import Path
 import json
 
@@ -70,7 +71,9 @@ def main():
     genre = chapter_info.get("genre", "")
     tone_guidelines = chapter_info.get("tone_guidelines", "")
     writing_focus = chapter_info.get("writing_focus", "")
-    writing_style = chapter_info.get("writing_style", {})
+    loaded_styles = load_all_styles()
+    generate_styles_md()
+    blueprint_descriptions = read_styles_md()
     chapter_background = chapter_info.get("background", "")
 
     if not user_outline.strip():
@@ -94,6 +97,7 @@ def main():
                 background=background,
                 user_answers=user_answers,
                 writing_focus=writing_focus,
+                writing_style_descriptions=blueprint_descriptions,
             )
         except Exception as e:
             print(f"\nError generating blueprint: {e}")
@@ -190,11 +194,10 @@ def main():
         act_scenes = []
 
         for scene_index, scene_blueprint in enumerate(act_blueprint.scenes):
-            scene_type = scene_blueprint.extra.get("scene_type", "dialogue")
             scene_events = scene_blueprint.extra.get("scene_events", [])
             print(f"\n{'─'*40}")
             print(f"Generating Scene {scene_blueprint.scene_number} of {act_blueprint.act_theme}...")
-            print(f"  Type: {scene_type}  |  Events: {len(scene_events)}")
+            print(f"  Events: {len(scene_events)}")
 
             try:
                 scene, agent_logs = orchestrator.generate_scene_with_writing(
@@ -209,7 +212,7 @@ def main():
                     writing_focus=writing_focus,
                     chapter_background=chapter_background,
                     story_state=story_state,
-                    writing_style=writing_style,
+                    loaded_styles=loaded_styles,
                 )
             except Exception as e:
                 print(f"Error generating scene: {e}")
@@ -245,8 +248,7 @@ def main():
                         feedback=feedback,
                         story_state=story_state,
                         setting_draft=scene.setting,
-                        dialogue_draft=scene.dialogue,
-                        writing_style=writing_style,
+                        loaded_styles=loaded_styles,
                     )
                 except Exception as e:
                     print(f"Error regenerating scene: {e}")

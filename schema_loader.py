@@ -99,6 +99,8 @@ class SchemaLoader:
             return config.get("default", 0)
         elif ftype == "list[str]":
             return []
+        elif ftype == "list":
+            return config.get("default", [])
         elif ftype == "bool":
             return config.get("default", False)
         return config.get("default", "")

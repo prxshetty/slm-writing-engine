@@ -3,6 +3,7 @@ Story Orchestrator — coordinates all agents to generate chapters.
 """
 
 import uuid
+import re
 from typing import Optional, Dict, List, Callable, Tuple, Any
 from models import (
     StoryContext,
@@ -18,6 +19,22 @@ from agents.scene_agent import SceneAgent
 from agents.dialogue_agent import DialogueAgent
 from agents.transition_agent import TransitionAgent
 from agents.writer_agent import WriterAgent
+from agents.compiler_agent import CompilerAgent
+
+
+def _extract_tail(text: str, n_sentences: int = 2) -> str:
+    """Extract the last ~n sentences from text for compiler context."""
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return ' '.join(sentences[-n_sentences:]) if len(sentences) >= n_sentences else text
+
+
+def _normalize_events(events: list) -> list:
+    """Normalize scene_events to list of dicts with 'beat' and 'style' keys."""
+    if not events:
+        return []
+    if isinstance(events[0], str):
+        return [{"beat": e, "style": "general"} for e in events]
+    return events
 
 
 class StoryOrchestrator:
@@ -29,6 +46,7 @@ class StoryOrchestrator:
         self.dialogue_agent = DialogueAgent()
         self.transition_agent = TransitionAgent()
         self.writer_agent = WriterAgent()
+        self.compiler_agent = CompilerAgent()
         self.state_manager = state_manager
 
     def generate_act(
@@ -121,15 +139,16 @@ class StoryOrchestrator:
         chapter_background: str = "",
         story_state: Optional[Dict] = None,
         writing_style: Optional[Dict[str, str]] = None,
+        loaded_styles: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Scene, dict]:
+        agent_logs = {"per_beat": []}
+
+        # -- Shared context --
         char_profiles = {}
         char_states = {}
-
         if self.state_manager:
             chars_in_scene = scene_blueprint.characters or characters
-            char_context = self.state_manager.get_character_context(
-                chars_in_scene, story_state
-            )
+            char_context = self.state_manager.get_character_context(chars_in_scene, story_state)
             for name, ctx in char_context.items():
                 char_profiles[name] = ctx["profile"]
                 char_states[name] = ctx["current_state"]
@@ -137,11 +156,6 @@ class StoryOrchestrator:
         prior = [s.scene_description for s in act_blueprint.scenes[:scene_index]]
         if scene_index == 0 and prev_act_bridge:
             prior = [prev_act_bridge] + prior
-
-        scene_type = scene_blueprint.extra.get("scene_type", "dialogue")
-        style_block = ""
-        if writing_style:
-            style_block = writing_style.get(scene_type) or writing_style.get("general", "")
 
         scene_context = StoryContext(
             chapter_title="",
@@ -158,54 +172,122 @@ class StoryOrchestrator:
             character_profiles=char_profiles,
             character_states=char_states,
             scene_description=scene_blueprint.scene_description or "",
-            writing_style={"active": style_block},
             extra=scene_blueprint.extra,
         )
 
+        # -- Scene Agent (setting) --
         print("  Generating setting...")
         setting_input = self.scene_agent._build_prompt(scene_context)
         setting_draft = self.scene_agent.generate(scene_context)
+        agent_logs["scene_context"] = {
+            "chapter_title": scene_context.chapter_title,
+            "act_number": scene_context.act_number,
+            "scene_number": scene_context.scene_number,
+            "background": scene_context.background,
+            "chapter_background": scene_context.chapter_background,
+            "characters": scene_context.characters,
+            "setting": scene_context.setting,
+            "genre": scene_context.genre,
+            "tone_guidelines": scene_context.tone_guidelines,
+            "writing_focus": scene_context.writing_focus,
+            "prior_scenes_context": scene_context.prior_scenes_context,
+            "character_profiles": scene_context.character_profiles,
+            "character_states": scene_context.character_states,
+            "scene_description": scene_context.scene_description,
+            "extra": scene_context.extra,
+        }
+        agent_logs["scene_agent"] = {
+            "system_prompt": self.scene_agent.system_prompt,
+            "input": setting_input,
+            "output": setting_draft,
+        }
 
-        if scene_type in ("action", "ambient", "dream"):
-            dialogue_input = "(skipped — non-dialogue scene)"
-            dialogue_draft = ""
+        # -- Parse events --
+        events = _normalize_events(scene_blueprint.extra.get("scene_events", []))
+        if not events:
+            events = [{"beat": scene_blueprint.scene_description, "style": "general"}]
+
+        # -- Per-beat generation --
+        beat_outputs = []
+        prev_tail = setting_draft
+        dialogue_per_beat_logs = []
+        writer_per_beat_logs = []
+
+        for i, event in enumerate(events):
+            beat_style = event.get("style", "general") if isinstance(event, dict) else "general"
+            style_data = (loaded_styles or {}).get(beat_style, {})
+            required_agents = style_data.get("required_agents", [])
+            writer_guidelines = style_data.get("writer_guidelines", "")
+            dialogue_guidelines = style_data.get("dialogue_guidelines", "")
+
+            mode = "opening" if i == 0 else "closing" if i == len(events) - 1 else "continuation"
+            beat_desc = event.get("beat", str(event)) if isinstance(event, dict) else str(event)
+            print(f"  Beat {i+1}/{len(events)} ({beat_style}, {mode})...")
+
+            # Dialogue for this beat (if required)
+            dialogue_for_beat = ""
+            if "dialogue" in required_agents:
+                d_input = self.dialogue_agent._build_prompt(
+                    scene_context, beat_desc, dialogue_guidelines
+                )
+                dialogue_for_beat = self.dialogue_agent.generate(
+                    scene_context, beat_desc, dialogue_guidelines
+                )
+                dialogue_per_beat_logs.append({
+                    "beat": i, "style": beat_style,
+                    "input": d_input, "output": dialogue_for_beat,
+                })
+
+            # Writer for this beat
+            w_input = ""  # prompt built inside generate_beat
+            beat_text = self.writer_agent.generate_beat(
+                context=scene_context,
+                beat=event,
+                beat_index=i,
+                total_beats=len(events),
+                prev_tail=prev_tail,
+                setting_draft=setting_draft if i == 0 else "",
+                dialogue_for_beat=dialogue_for_beat,
+                writer_guidelines=writer_guidelines,
+                mode=mode,
+            )
+            beat_outputs.append(beat_text)
+            writer_per_beat_logs.append({
+                "beat": i, "mode": mode, "style": beat_style,
+                "output": beat_text,
+            })
+
+            prev_tail = _extract_tail(beat_text, 2)
+
+        # -- Compiler pass (smooth boundaries) --
+        compiler_logs = []
+        if len(beat_outputs) > 1:
+            compiled = [beat_outputs[0]]
+            for i in range(1, len(beat_outputs)):
+                tail = _extract_tail(compiled[-1], 2)
+                smoothed = self.compiler_agent.smooth_next(tail, beat_outputs[i])
+                compiled.append(smoothed)
+                compiler_logs.append({
+                    "beat": i, "input_tail": tail,
+                    "input_draft": beat_outputs[i], "output": smoothed,
+                })
+            full_content = '\n\n'.join(compiled)
+        elif beat_outputs:
+            full_content = beat_outputs[0]
         else:
-            print("  Generating dialogue...")
-            dialogue_input = self.dialogue_agent._build_prompt(scene_context)
-            dialogue_draft = self.dialogue_agent.generate(scene_context)
+            full_content = ""
 
-        print("  Writing final scene...")
-        writer_input = self.writer_agent._build_prompt(
-            scene_context, setting_draft, dialogue_draft
-        )
-        full_content = self.writer_agent.generate(
-            scene_context,
-            setting_draft=setting_draft,
-            dialogue_draft=dialogue_draft,
-        )
-
-        agent_logs = {
-            "scene_context": {
-                "chapter_title": scene_context.chapter_title,
-                "act_number": scene_context.act_number,
-                "scene_number": scene_context.scene_number,
-                "background": scene_context.background,
-                "chapter_background": scene_context.chapter_background,
-                "characters": scene_context.characters,
-                "setting": scene_context.setting,
-                "genre": scene_context.genre,
-                "tone_guidelines": scene_context.tone_guidelines,
-                "writing_focus": scene_context.writing_focus,
-                "prior_scenes_context": scene_context.prior_scenes_context,
-                "character_profiles": scene_context.character_profiles,
-                "character_states": scene_context.character_states,
-                "scene_description": scene_context.scene_description,
-                "writing_style": scene_context.writing_style,
-                "extra": scene_context.extra,
-            },
-            "scene_agent": {"system_prompt": self.scene_agent.system_prompt, "input": setting_input, "output": setting_draft},
-            "dialogue_agent": {"system_prompt": self.dialogue_agent.system_prompt, "input": dialogue_input, "output": dialogue_draft},
-            "writer_agent": {"system_prompt": self.writer_agent.system_prompt, "input": writer_input, "output": full_content},
+        agent_logs["dialogue_agent"] = {
+            "system_prompt": self.dialogue_agent.system_prompt,
+            "per_beat": dialogue_per_beat_logs,
+        }
+        agent_logs["writer_agent"] = {
+            "system_prompt": self.writer_agent.system_prompt,
+            "per_beat": writer_per_beat_logs,
+        }
+        agent_logs["compiler_agent"] = {
+            "system_prompt": self.compiler_agent.template,
+            "per_beat": compiler_logs,
         }
 
         scene = Scene(
@@ -213,7 +295,7 @@ class StoryOrchestrator:
             act_number=act_number,
             scene_number=scene_blueprint.scene_number,
             setting=setting_draft,
-            dialogue=dialogue_draft,
+            dialogue="",
             characters_present=scene_blueprint.characters or characters,
             full_content=full_content,
         )
@@ -237,15 +319,16 @@ class StoryOrchestrator:
         setting_draft: str = None,
         dialogue_draft: str = None,
         writing_style: Optional[Dict[str, str]] = None,
+        loaded_styles: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Scene, dict]:
+        agent_logs = {"per_beat": []}
+
+        # -- Shared context --
         char_profiles = {}
         char_states = {}
-
         if self.state_manager:
             chars_in_scene = scene_blueprint.characters or characters
-            char_context = self.state_manager.get_character_context(
-                chars_in_scene, story_state
-            )
+            char_context = self.state_manager.get_character_context(chars_in_scene, story_state)
             for name, ctx in char_context.items():
                 char_profiles[name] = ctx["profile"]
                 char_states[name] = ctx["current_state"]
@@ -253,11 +336,6 @@ class StoryOrchestrator:
         prior = [s.scene_description for s in act_blueprint.scenes[:scene_index]]
         if scene_index == 0 and prev_act_bridge:
             prior = [prev_act_bridge] + prior
-
-        scene_type = scene_blueprint.extra.get("scene_type", "dialogue")
-        style_block = ""
-        if writing_style:
-            style_block = writing_style.get(scene_type) or writing_style.get("general", "")
 
         scene_context = StoryContext(
             chapter_title="",
@@ -274,10 +352,10 @@ class StoryOrchestrator:
             character_profiles=char_profiles,
             character_states=char_states,
             scene_description=scene_blueprint.scene_description or "",
-            writing_style={"active": style_block},
             extra=scene_blueprint.extra,
         )
 
+        # -- Scene Agent (reuse or regenerate) --
         if not setting_draft:
             print("  Regenerating setting...")
             setting_input = self.scene_agent._build_prompt(scene_context)
@@ -285,50 +363,113 @@ class StoryOrchestrator:
         else:
             setting_input = "(reused from previous)"
 
-        if scene_type in ("action", "ambient", "dream"):
-            dialogue_input = "(skipped — non-dialogue scene)"
-            dialogue_draft = ""
-        elif not dialogue_draft:
-            print("  Regenerating dialogue...")
-            dialogue_input = self.dialogue_agent._build_prompt(scene_context)
-            dialogue_draft = self.dialogue_agent.generate(scene_context)
+        agent_logs["scene_context"] = {
+            "chapter_title": scene_context.chapter_title,
+            "act_number": scene_context.act_number,
+            "scene_number": scene_context.scene_number,
+            "background": scene_context.background,
+            "chapter_background": scene_context.chapter_background,
+            "characters": scene_context.characters,
+            "setting": scene_context.setting,
+            "genre": scene_context.genre,
+            "tone_guidelines": scene_context.tone_guidelines,
+            "writing_focus": scene_context.writing_focus,
+            "prior_scenes_context": scene_context.prior_scenes_context,
+            "character_profiles": scene_context.character_profiles,
+            "character_states": scene_context.character_states,
+            "scene_description": scene_context.scene_description,
+            "extra": scene_context.extra,
+        }
+        agent_logs["scene_agent"] = {
+            "system_prompt": self.scene_agent.system_prompt,
+            "input": setting_input,
+            "output": setting_draft,
+        }
+
+        # -- Parse events --
+        events = _normalize_events(scene_blueprint.extra.get("scene_events", []))
+        if not events:
+            events = [{"beat": scene_blueprint.scene_description, "style": "general"}]
+
+        # -- Per-beat generation with feedback --
+        beat_outputs = []
+        prev_tail = setting_draft
+        dialogue_per_beat_logs = []
+        writer_per_beat_logs = []
+
+        for i, event in enumerate(events):
+            beat_style = event.get("style", "general") if isinstance(event, dict) else "general"
+            style_data = (loaded_styles or {}).get(beat_style, {})
+            required_agents = style_data.get("required_agents", [])
+            writer_guidelines = style_data.get("writer_guidelines", "")
+            dialogue_guidelines = style_data.get("dialogue_guidelines", "")
+
+            mode = "opening" if i == 0 else "closing" if i == len(events) - 1 else "continuation"
+            beat_desc = event.get("beat", str(event)) if isinstance(event, dict) else str(event)
+            print(f"  Beat {i+1}/{len(events)} ({beat_style}, {mode})...")
+
+            dialogue_for_beat = ""
+            if "dialogue" in required_agents:
+                d_input = self.dialogue_agent._build_prompt(
+                    scene_context, beat_desc, dialogue_guidelines
+                )
+                dialogue_for_beat = self.dialogue_agent.generate(
+                    scene_context, beat_desc, dialogue_guidelines
+                )
+                dialogue_per_beat_logs.append({
+                    "beat": i, "style": beat_style,
+                    "input": d_input, "output": dialogue_for_beat,
+                })
+
+            beat_text = self.writer_agent.generate_beat(
+                context=scene_context,
+                beat=event,
+                beat_index=i,
+                total_beats=len(events),
+                prev_tail=prev_tail,
+                setting_draft=setting_draft if i == 0 else "",
+                dialogue_for_beat=dialogue_for_beat,
+                writer_guidelines=writer_guidelines,
+                mode=mode,
+                feedback=feedback,
+            )
+            beat_outputs.append(beat_text)
+            writer_per_beat_logs.append({
+                "beat": i, "mode": mode, "style": beat_style,
+                "output": beat_text,
+            })
+
+            prev_tail = _extract_tail(beat_text, 2)
+
+        # -- Compiler pass --
+        compiler_logs = []
+        if len(beat_outputs) > 1:
+            compiled = [beat_outputs[0]]
+            for i in range(1, len(beat_outputs)):
+                tail = _extract_tail(compiled[-1], 2)
+                smoothed = self.compiler_agent.smooth_next(tail, beat_outputs[i])
+                compiled.append(smoothed)
+                compiler_logs.append({
+                    "beat": i, "input_tail": tail,
+                    "input_draft": beat_outputs[i], "output": smoothed,
+                })
+            full_content = '\n\n'.join(compiled)
+        elif beat_outputs:
+            full_content = beat_outputs[0]
         else:
-            dialogue_input = "(reused from previous)"
+            full_content = ""
 
-        print("  Regenerating final scene with feedback...")
-        writer_input = self.writer_agent._build_prompt(
-            scene_context, setting_draft, dialogue_draft
-        )
-        writer_input += f"\n\n---\n\nUSER FEEDBACK:\n{feedback}\n\nPlease rewrite the scene incorporating this feedback while keeping the same arc and context."
-        full_content = self.writer_agent.regenerate_with_feedback(
-            scene_context,
-            feedback=feedback,
-            setting_draft=setting_draft,
-            dialogue_draft=dialogue_draft,
-        )
-
-        agent_logs = {
-            "scene_context": {
-                "chapter_title": scene_context.chapter_title,
-                "act_number": scene_context.act_number,
-                "scene_number": scene_context.scene_number,
-                "background": scene_context.background,
-                "chapter_background": scene_context.chapter_background,
-                "characters": scene_context.characters,
-                "setting": scene_context.setting,
-                "genre": scene_context.genre,
-                "tone_guidelines": scene_context.tone_guidelines,
-                "writing_focus": scene_context.writing_focus,
-                "prior_scenes_context": scene_context.prior_scenes_context,
-                "character_profiles": scene_context.character_profiles,
-                "character_states": scene_context.character_states,
-                "scene_description": scene_context.scene_description,
-                "writing_style": scene_context.writing_style,
-                "extra": scene_context.extra,
-            },
-            "scene_agent": {"system_prompt": self.scene_agent.system_prompt, "input": setting_input, "output": setting_draft},
-            "dialogue_agent": {"system_prompt": self.dialogue_agent.system_prompt, "input": dialogue_input, "output": dialogue_draft},
-            "writer_agent": {"system_prompt": self.writer_agent.system_prompt, "input": writer_input, "output": full_content},
+        agent_logs["dialogue_agent"] = {
+            "system_prompt": self.dialogue_agent.system_prompt,
+            "per_beat": dialogue_per_beat_logs,
+        }
+        agent_logs["writer_agent"] = {
+            "system_prompt": self.writer_agent.system_prompt,
+            "per_beat": writer_per_beat_logs,
+        }
+        agent_logs["compiler_agent"] = {
+            "system_prompt": self.compiler_agent.template,
+            "per_beat": compiler_logs,
         }
 
         scene = Scene(
@@ -336,7 +477,7 @@ class StoryOrchestrator:
             act_number=act_number,
             scene_number=scene_blueprint.scene_number,
             setting=setting_draft,
-            dialogue=dialogue_draft,
+            dialogue="",
             characters_present=scene_blueprint.characters or characters,
             full_content=full_content,
         )

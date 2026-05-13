@@ -272,16 +272,17 @@ def parse_chapter_file(file_path: Path) -> Dict[str, Any]:
     )
     writing_style_raw = style_section.group(1).strip() if style_section else ""
 
-    writing_style = {}
+    writing_style_names = []
     if writing_style_raw:
-        blocks = re.split(r"###\s+", writing_style_raw)
-        for block in blocks:
-            if not block.strip():
-                continue
-            lines = block.strip().splitlines()
-            key = lines[0].strip().lower()
-            content_lines = "\n".join(lines[1:]).strip()
-            writing_style[key] = content_lines
+        bullets = re.findall(r"^\s*[-*]\s+(\S+)", writing_style_raw, re.MULTILINE)
+        if bullets:
+            writing_style_names = [b.strip().lower() for b in bullets if b.strip()]
+        else:
+            blocks = re.split(r"###\s+", writing_style_raw)
+            for block in blocks:
+                if block.strip():
+                    key = block.strip().splitlines()[0].strip().lower()
+                    writing_style_names.append(key)
 
     return {
         "title": title,
@@ -291,6 +292,6 @@ def parse_chapter_file(file_path: Path) -> Dict[str, Any]:
         "genre": genre,
         "tone_guidelines": tone_guidelines,
         "writing_focus": writing_focus,
-        "writing_style": writing_style,
+        "writing_style_names": writing_style_names,
         "file_path": str(file_path),
     }

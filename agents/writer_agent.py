@@ -1,5 +1,8 @@
 """
-Writer Agent — weaves setting and dialogue into a cohesive scene.
+Writer Agent — writes one beat of a scene at a time.
+Three modes: opening (first beat), continuation (middle beats), closing (final beat).
+The system prompt (writer.txt) defines the role; mode instructions are
+injected inline into the user prompt per beat.
 """
 
 import llm
@@ -7,91 +10,79 @@ import config
 from models import StoryContext
 
 
+MODE_INTROS = {
+    "opening": (
+        "This is the opening beat of the scene.\n\n"
+        "SETTING:\n{setting_draft}"
+    ),
+    "continuation": (
+        "This is a middle beat of the scene. Continue from the previous paragraph.\n\n"
+        "LAST TWO SENTENCES OF PREVIOUS PARAGRAPH:\n{prev_tail}"
+    ),
+    "closing": (
+        "This is the final beat of the scene. Close the scene.\n\n"
+        "LAST TWO SENTENCES OF PREVIOUS PARAGRAPH:\n{prev_tail}"
+    ),
+}
+
+MODE_TOKEN_LIMITS = {
+    "opening": 500,
+    "continuation": 400,
+    "closing": 500,
+}
+
+MODE_CLOSING_NOTES = {
+    "opening": "Do NOT conclude or summarize — the scene continues after this beat.",
+    "continuation": "Do NOT conclude or summarize — the scene continues after this beat.",
+    "closing": "Write this beat and close the scene naturally. Do not leave loose threads — end with a sense of completion or a pointed transition to whatever comes next.",
+}
+
+
 class WriterAgent:
-    """Combines sub-agent outputs into a final, polished scene."""
+    """Writes a single beat of a scene in three modes."""
 
     def __init__(self):
         self.client = llm.LLMClient()
         self.system_prompt = config.SYSTEM_PROMPTS["writer"]
-        self.token_limit = config.TOKEN_LIMITS.get("writer", 1500)
-        self.temperature = config.AGENT_CONFIG.get("writer", {"temperature": 0.8})["temperature"]
+        self.temperature = config.AGENT_CONFIG["writer"]["temperature"]
 
-    def generate(
+    def generate_beat(
         self,
         context: StoryContext,
+        beat: dict,
+        beat_index: int,
+        total_beats: int,
+        prev_tail: str,
         setting_draft: str,
-        dialogue_draft: str,
+        dialogue_for_beat: str,
+        writer_guidelines: str,
+        mode: str,
+        feedback: str = "",
     ) -> str:
-        user_prompt = self._build_prompt(context, setting_draft, dialogue_draft)
+        """Generate a single beat of the scene."""
+        beat_desc = beat.get("beat", "") if isinstance(beat, dict) else str(beat)
+        beat_style = beat.get("style", "general") if isinstance(beat, dict) else "general"
+
+        token_limit = MODE_TOKEN_LIMITS.get(mode, 500)
+        intro = MODE_INTROS[mode].format(setting_draft=setting_draft, prev_tail=prev_tail)
+        closing_note = MODE_CLOSING_NOTES[mode]
+
+        user_prompt = (
+            f"{intro}\n\n"
+            f"BEAT DESCRIPTION:\n{beat_desc}\n\n"
+            f"STYLE: {beat_style}\n"
+            f"STYLE GUIDELINES:\n{writer_guidelines}\n\n"
+            f"DIALOGUE FOR THIS BEAT:\n{dialogue_for_beat}\n\n"
+            f"{closing_note}\n"
+            f"Output polished prose only, no headers or meta commentary."
+        )
+
+        if feedback:
+            user_prompt += f"\n\nUSER FEEDBACK:\n{feedback}\n\nIncorporate this feedback into the beat."
+
         return self.client.generate_to_completion(
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
             temperature=self.temperature,
-            max_tokens=self.token_limit,
+            max_tokens=token_limit,
         )
-
-    def regenerate_with_feedback(
-        self,
-        context: StoryContext,
-        feedback: str,
-        setting_draft: str,
-        dialogue_draft: str,
-    ) -> str:
-        user_prompt = self._build_prompt(context, setting_draft, dialogue_draft)
-        user_prompt += f"\n\n---\n\nUSER FEEDBACK:\n{feedback}\n\nPlease rewrite the scene incorporating this feedback while keeping the same arc and context."
-        return self.client.generate_to_completion(
-            system_prompt=self.system_prompt,
-            user_prompt=user_prompt,
-            temperature=self.temperature,
-            max_tokens=self.token_limit,
-        )
-
-    def _build_prompt(
-        self,
-        context: StoryContext,
-        setting_draft: str,
-        dialogue_draft: str,
-    ) -> str:
-        parts = [
-            f"SCENE NUMBER: {context.scene_number}",
-            f"\nSCENE DESCRIPTION:\n{context.scene_description}",
-        ]
-
-        if context.prior_scenes_context:
-            parts.append("\nPRIOR SCENES IN THIS ACT:")
-            for i, desc in enumerate(context.prior_scenes_context, 1):
-                parts.append(f" {i}. {desc}")
-
-        if context.genre:
-            parts.append(f"\nGENRE: {context.genre}")
-        if context.tone_guidelines:
-            parts.append(f"TONE GUIDELINES: {context.tone_guidelines}")
-        if context.chapter_background:
-            parts.append(f"CHAPTER BACKGROUND:\n{context.chapter_background}")
-        if context.writing_focus:
-            parts.append(f"WRITING FOCUS:\n{context.writing_focus}")
-        if context.extra.get("scene_type"):
-            parts.append(f"\nSCENE TYPE: {context.extra['scene_type']}")
-
-        if context.extra.get("scene_events"):
-            parts.append("\nSCENE EVENTS (must be covered in order):")
-            for i, event in enumerate(context.extra["scene_events"], 1):
-                parts.append(f"  {i}. {event}")
-
-        active_style = context.writing_style.get("active", "")
-        if active_style:
-            parts.append(f"\nWRITING STYLE GUIDELINES:\n{active_style}")
-
-        parts.append(f"\n--- SETTING (from SceneAgent) ---\n{setting_draft}")
-
-        parts.append(f"\n--- DIALOGUE (from DialogueAgent) ---\n{dialogue_draft}")
-
-        if context.character_profiles:
-            parts.append("\n--- CHARACTER PROFILES ---")
-            for name, profile in context.character_profiles.items():
-                parts.append(f"\n{name}:")
-                parts.append(f"  Traits: {profile.get('traits', 'unknown')}")
-                parts.append(f"  Goals: {profile.get('goals', 'unknown')}")
-                parts.append(f"  Flaws: {profile.get('flaws', 'unknown')}")
-
-        return "\n".join(parts)
