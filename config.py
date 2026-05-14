@@ -71,6 +71,7 @@ def _build_blueprint_prompt() -> str:
 def _build_agent_prompts() -> dict:
     """Build agent prompts."""
     return {
+        "blueprint": _build_blueprint_prompt(),
         "scene": _load_prompt("scene.txt"),
         "dialogue": _load_prompt("dialogue.txt"),
         "narration": _load_prompt("narration.txt"),
@@ -87,11 +88,6 @@ def _apply_thinking_preamble(prompts: dict) -> dict:
     return {key: THINKING_PREAMBLE + prompt for key, prompt in prompts.items()}
 
 
-SYSTEM_PROMPTS = {
-    "blueprint": _build_blueprint_prompt(),
-}
-
 agent_prompts = _build_agent_prompts()
 agent_prompts = _apply_thinking_preamble(agent_prompts)
-for key, prompt in agent_prompts.items():
-    SYSTEM_PROMPTS[key] = prompt
+SYSTEM_PROMPTS = {key: prompt for key, prompt in agent_prompts.items()}
