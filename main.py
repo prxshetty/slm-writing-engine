@@ -240,10 +240,6 @@ def main():
     print("=" * 60)
 
     print(blueprint_agent.print_scene_walkthrough(blueprint))
-    print("\nProceed to scene-by-scene generation? (y) ", end="")
-    if input().strip().lower() != "y":
-        print("Exiting.")
-        return
 
     print("\n" + "=" * 60)
     print("Step 4: Scene-by-Scene Generation")
@@ -276,7 +272,7 @@ def main():
         act_scenes = []
 
         for scene_index, scene_blueprint in enumerate(act_blueprint.scenes):
-            # Lazy scene enrichment if no events exist yet
+            # Generate or load scene events
             scene_events = scene_blueprint.extra.get("scene_events", [])
             if not scene_events:
                 print(f"\n  Generating scene events for Scene {scene_blueprint.scene_number}...")
@@ -285,15 +281,34 @@ def main():
                     style_descriptions=blueprint_descriptions,
                 )
                 scene_blueprint.extra["scene_events"] = scene_events
+
+            # Always display events and ask for approval before generating
+            while True:
+                print(f"\n{'─'*40}")
+                print(f"Scene {scene_blueprint.scene_number}: {scene_blueprint.scene_description}")
+                print(f"  Setting: {scene_blueprint.scene_setting}")
+                print(f"  Characters: {', '.join(scene_blueprint.characters)}")
                 print(f"  Events: {len(scene_events)}")
                 for ev in scene_events:
                     beat = ev.get("beat", ev) if isinstance(ev, dict) else ev
                     style = ev.get("style", "general") if isinstance(ev, dict) else "general"
                     print(f"    [{style}] {beat}")
-            else:
-                print(f"\n{'─'*40}")
-                print(f"Generating Scene {scene_blueprint.scene_number} of {act_blueprint.act_theme}...")
-                print(f"  Events: {len(scene_events)}")
+                print(f"{'─'*40}")
+                print("\nProceed with generation for this scene? (y/n) ", end="")
+                events_approval = input().strip().lower()
+                if events_approval == "y":
+                    break
+                print("\nEnter feedback to adjust scene events:")
+                events_feedback = input("Feedback: ").strip()
+                if not events_feedback:
+                    print("No feedback provided. Keeping current events.")
+                    break
+                print(f"  Regenerating scene events for Scene {scene_blueprint.scene_number}...")
+                scene_events = blueprint_agent.generate_scene_events(
+                    scene_description=scene_blueprint.scene_description,
+                    style_descriptions=blueprint_descriptions,
+                )
+                scene_blueprint.extra["scene_events"] = scene_events
 
             try:
                 scene, agent_logs = orchestrator.generate_scene_with_writing(

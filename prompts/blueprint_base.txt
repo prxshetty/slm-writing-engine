@@ -9,8 +9,9 @@ Requirements:
 2–4 acts per chapter
 2–4 scenes per act
 every scene must include:
-- scene_setting: location tag only, 2-3 words maximum
-- scene_description: 2–4 concise sentences covering narrative purpose.
+- scene_setting: location and optional time tag, 2-3 words maximum (e.g. 'kitchen — morning')
+- scene_description: 2–4 concise sentences covering narrative purpose and how this scene connects to the previous one.
+- consecutive scenes must form a logical sequence: characters move between locations, time passes naturally, no unexplained jumps or teleportation
 
 The characters list may be empty or contain hints. Infer which characters
 appear from the chapter description text. Use their full names in the

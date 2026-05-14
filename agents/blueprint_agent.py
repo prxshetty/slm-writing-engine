@@ -126,15 +126,48 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
             max_tokens=800,
         )
 
-        try:
-            import json as json_mod
-            events = json_mod.loads(response.strip())
-            if isinstance(events, list):
-                return events
-        except (json.JSONDecodeError, ValueError):
-            pass
+        events = self._parse_scene_events_response(response)
+        if events:
+            return events
 
         return [{"beat": scene_description, "style": "general"}]
+
+    def _parse_scene_events_response(self, response: str) -> list:
+        """Robustly parse scene_events JSON array from LLM response."""
+        import json as json_mod
+
+        # Strategy 1: direct parse
+        try:
+            data = json_mod.loads(response.strip())
+            if isinstance(data, list):
+                return data
+        except json_mod.JSONDecodeError:
+            pass
+
+        # Strategy 2: find [ ] bounds (handles markdown fences, leading/trailing text)
+        try:
+            start = response.find("[")
+            end = response.rfind("]") + 1
+            if start >= 0 and end > start:
+                data = json_mod.loads(response[start:end])
+                if isinstance(data, list):
+                    return data
+        except (json_mod.JSONDecodeError, ValueError):
+            pass
+
+        # Strategy 3: strip ```json / ``` fences and try again
+        try:
+            cleaned = response.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```(?:json)?\s*\n?", "", cleaned)
+                cleaned = re.sub(r"\n?```\s*$", "", cleaned)
+                data = json_mod.loads(cleaned.strip())
+                if isinstance(data, list):
+                    return data
+        except (json_mod.JSONDecodeError, ValueError):
+            pass
+
+        return []
 
     def _build_prompt(
         self,
