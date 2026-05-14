@@ -1,10 +1,22 @@
 """
 LMStudio client — OpenAI-compatible API with streaming support.
+Thinking model support: captures reasoning_content from API response.
 """
 
 import requests
 import json
 import config
+
+
+def _log_raw_response(content: str, label: str = ""):
+    """Print the raw model response with clear markers for debugging."""
+    tag = f" {label} " if label else " "
+    sep = "─" * 60
+    print(f"\n{sep}")
+    print(f"╭─[RAW RESPONSE{tag}]")
+    print(f"╰─{sep}")
+    print(content)
+    print(f"{sep}[/RAW RESPONSE]{sep}\n")
 
 
 class LLMClient:
@@ -26,7 +38,7 @@ class LLMClient:
     ) -> str:
         """Generate text with the LLM. Use streaming=True for real-time output."""
         url = f"{self.base_url}/chat/completions"
-        
+
         headers = {"Content-Type": "application/json"}
         payload = {
             "model": self.model,
@@ -50,7 +62,13 @@ class LLMClient:
         response = requests.post(url, headers=headers, json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        content = msg["content"]
+        reasoning = msg.get("reasoning_content", "")
+        if reasoning:
+            print(f"\n--- Thinking ---\n{reasoning}\n---\n")
+        _log_raw_response(content, "blocking")
+        return content
 
     def _stream_generate(self, url: str, headers: dict, payload: dict) -> str:
         """Streaming generation — yields content as it arrives."""
@@ -104,7 +122,13 @@ class LLMClient:
         response = requests.post(url, headers=headers, json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        content = msg["content"]
+        reasoning = msg.get("reasoning_content", "")
+        if reasoning:
+            print(f"\n--- Thinking ---\n{reasoning}\n---\n")
+        _log_raw_response(content, "completion")
+        return content
 
 
 def stream_print(generator):
