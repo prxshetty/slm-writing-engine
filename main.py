@@ -276,10 +276,24 @@ def main():
         act_scenes = []
 
         for scene_index, scene_blueprint in enumerate(act_blueprint.scenes):
+            # Lazy scene enrichment if no events exist yet
             scene_events = scene_blueprint.extra.get("scene_events", [])
-            print(f"\n{'─'*40}")
-            print(f"Generating Scene {scene_blueprint.scene_number} of {act_blueprint.act_theme}...")
-            print(f"  Events: {len(scene_events)}")
+            if not scene_events:
+                print(f"\n  Generating scene events for Scene {scene_blueprint.scene_number}...")
+                scene_events = blueprint_agent.generate_scene_events(
+                    scene_description=scene_blueprint.scene_description,
+                    style_descriptions=blueprint_descriptions,
+                )
+                scene_blueprint.extra["scene_events"] = scene_events
+                print(f"  Events: {len(scene_events)}")
+                for ev in scene_events:
+                    beat = ev.get("beat", ev) if isinstance(ev, dict) else ev
+                    style = ev.get("style", "general") if isinstance(ev, dict) else "general"
+                    print(f"    [{style}] {beat}")
+            else:
+                print(f"\n{'─'*40}")
+                print(f"Generating Scene {scene_blueprint.scene_number} of {act_blueprint.act_theme}...")
+                print(f"  Events: {len(scene_events)}")
 
             try:
                 scene, agent_logs = orchestrator.generate_scene_with_writing(

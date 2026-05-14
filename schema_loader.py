@@ -32,23 +32,15 @@ class SchemaLoader:
     def _load_from_directory(self, schema_dir: Path) -> dict:
         result = {"scene": {"fields": {}}, "act": {"fields": {}}, "agent_fields": {}}
 
-        scene_file = schema_dir / "scene.yaml"
-        if scene_file.exists():
-            with open(scene_file, "r", encoding="utf-8") as f:
-                scene_data = yaml.safe_load(f) or {}
-                result["scene"] = scene_data
+        for yaml_file in schema_dir.glob("*.yaml"):
+            stem = yaml_file.stem
+            with open(yaml_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
 
-        act_file = schema_dir / "act.yaml"
-        if act_file.exists():
-            with open(act_file, "r", encoding="utf-8") as f:
-                act_data = yaml.safe_load(f) or {}
-                result["act"] = act_data
-
-        agents_file = schema_dir / "agents.yaml"
-        if agents_file.exists():
-            with open(agents_file, "r", encoding="utf-8") as f:
-                agents_data = yaml.safe_load(f) or {}
-                result["agent_fields"] = {k: v for k, v in agents_data.items() if isinstance(v, list)}
+            if stem == "agents":
+                result["agent_fields"] = {k: v for k, v in data.items() if isinstance(v, list)}
+            else:
+                result[stem] = data
 
         return result
 
@@ -66,20 +58,17 @@ class SchemaLoader:
 
     def get_field_names(self, entity: str) -> List[str]:
         """Get list of field names for an entity type."""
-        if entity == "scene":
-            return list(self.get_scene_fields().keys())
-        elif entity == "act":
-            return list(self.get_act_fields().keys())
-        return []
+        fields = self.schema.get(entity, {}).get("fields", {})
+        return list(fields.keys())
 
     def get_required_fields(self, entity: str) -> List[str]:
         """Get list of required field names."""
-        fields = self.get_scene_fields() if entity == "scene" else self.get_act_fields()
+        fields = self.schema.get(entity, {}).get("fields", {})
         return [name for name, cfg in fields.items() if cfg.get("required", False)]
 
     def get_field_config(self, entity: str, field_name: str) -> Optional[dict]:
         """Get config for a specific field."""
-        fields = self.get_scene_fields() if entity == "scene" else self.get_act_fields()
+        fields = self.schema.get(entity, {}).get("fields", {})
         return fields.get(field_name)
 
     def get_field_type(self, entity: str, field_name: str) -> str:
@@ -114,11 +103,8 @@ class SchemaLoader:
 
     def generate_json_schema(self, entity: str) -> str:
         """Generate the JSON schema section for the blueprint prompt."""
-        if entity == "scene":
-            fields = self.get_scene_fields()
-        elif entity == "act":
-            fields = self.get_act_fields()
-        else:
+        fields = self.schema.get(entity, {}).get("fields", {})
+        if not fields:
             return ""
 
         lines = []
@@ -147,7 +133,8 @@ class SchemaLoader:
 
     def generate_blueprint_schema_section(self) -> str:
         """Build the full JSON schema that goes into blueprint.txt prompt."""
-        scene_json = self.generate_json_schema("scene")
+        scene_schema = "blueprint_skeleton" if "blueprint_skeleton" in self.schema else "scene"
+        scene_json = self.generate_json_schema(scene_schema)
         act_json = self.generate_json_schema("act")
 
         return f"""Output a JSON structure with this schema:
@@ -204,7 +191,8 @@ class SchemaLoader:
 
     def _normalize_blueprint_data(self, data: dict) -> dict:
         """Normalize raw LLM response to match schema."""
-        scene_fields = self.get_field_names("scene")
+        scene_entity = "blueprint_skeleton" if "blueprint_skeleton" in self.schema else "scene"
+        scene_fields = self.get_field_names(scene_entity)
         act_fields = self.get_field_names("act")
 
         normalized = {

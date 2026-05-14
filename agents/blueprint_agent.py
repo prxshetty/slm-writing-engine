@@ -103,6 +103,39 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
 
         return self._parse_act_response(response, act_blueprint.act_number)
 
+    def generate_scene_events(
+        self,
+        scene_description: str,
+        style_descriptions: Optional[Dict[str, str]] = None,
+    ) -> list:
+        """Generate scene_events with style tags for a single scene."""
+        styles_block = "\n".join(
+            f"- {name}: {desc}" for name, desc in sorted(style_descriptions.items())
+        ) if style_descriptions else "- general"
+
+        user_prompt = (
+            config.SYSTEM_PROMPTS["scene_enrich"]
+            .replace("{scene_description}", scene_description)
+            .replace("{styles}", styles_block)
+        )
+
+        response = self.client.generate_to_completion(
+            system_prompt="",
+            user_prompt=user_prompt,
+            temperature=self.temperature - 0.05,
+            max_tokens=800,
+        )
+
+        try:
+            import json as json_mod
+            events = json_mod.loads(response.strip())
+            if isinstance(events, list):
+                return events
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        return [{"beat": scene_description, "style": "general"}]
+
     def _build_prompt(
         self,
         chapter_title: str,
@@ -123,13 +156,7 @@ Please revise only this act's scenes based on the feedback. Output ONLY valid JS
         parts.append(f"\nUser's Chapter Description:\n{user_outline}")
         if user_answers:
             parts.append(f"\nAdditional context from user:\n{user_answers}")
-        if writing_style_descriptions:
-            parts.append("\n# Available Styles\n")
-            parts.append("Use these style tags when annotating scene_events.\n")
-            for name in sorted(writing_style_descriptions):
-                desc = writing_style_descriptions[name]
-                parts.append(f"- **{name}** — {desc}")
-        parts.append("\nGenerate the chapter structure (acts and scenes) based on this description.")
+        parts.append("\nGenerate the chapter skeleton (acts and scenes) based on this description.")
         return "\n".join(parts)
 
     def _parse_response(self, response: str) -> ChapterBlueprint:

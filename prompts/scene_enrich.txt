@@ -1,0 +1,16 @@
+You are a Scene Enrichment Agent. Given a single scene's narrative arc and a list of available styles, produce ordered beat-level events with style tags.
+
+Scene description:
+{scene_description}
+
+Available styles:
+{styles}
+
+Output a JSON array of scene_events — each event is an object with "beat" (short description) and "style" (one of the available styles).
+
+Requirements:
+- 2-6 events per scene, ordered step by step
+- First beat establishes, middle beats develop, final beat resolves or transitions
+- Each beat must use an available style tag
+- Default to "general" if no style fits naturally
+- Output valid JSON array only, no other text
