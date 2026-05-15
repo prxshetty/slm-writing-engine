@@ -25,4 +25,4 @@ fields:
     type: list
     required: false
     default: []
-    description: "Populated lazily before scene generation. Each event is an object: {\"beat\": \"...\", \"style\": \"general\"}."
+    description: "Populated lazily before scene generation. Each event is an object: {\"beat\": \"...\", \"style\": \"general\", \"expected_exchanges\": \"2-3\", \"conversation_flow\": [\"step 1\", \"step 2\"]}. expected_exchanges: \"0\", \"1\", \"2-3\", or \"4+\". conversation_flow: array of 2-6 micro-steps for the dialogue arc."
