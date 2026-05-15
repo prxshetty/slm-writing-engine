@@ -4,6 +4,7 @@ Story Orchestrator — coordinates all agents to generate chapters.
 
 import uuid
 import re
+import config
 from typing import Optional, Dict, List, Callable, Tuple, Any
 from models import (
     StoryContext,
@@ -219,7 +220,7 @@ class StoryOrchestrator:
             style_data = (loaded_styles or {}).get(beat_style, {})
             agent_sections = style_data.get("agent_sections", {})
             writer_guidelines = agent_sections.get("writer", "")
-            beat_token_limit = style_data.get("output_size")
+            beat_token_limit = None if config.DISABLE_TOKEN_LIMITS else style_data.get("output_size")
 
             mode = "opening" if i == 0 else "closing" if i == len(events) - 1 else "continuation"
             beat_desc = event.get("beat", str(event)) if isinstance(event, dict) else str(event)
@@ -245,10 +246,10 @@ class StoryOrchestrator:
                     print(f"    narration draft ({len(draft)} chars)")
                 elif agent_name == "dialogue":
                     d_input = self.dialogue_agent._build_prompt(
-                        scene_context, beat_desc, guidelines
+                        scene_context, event, guidelines
                     )
                     draft = self.dialogue_agent.generate(
-                        scene_context, beat_desc, guidelines
+                        scene_context, event, guidelines
                     )
                     drafts["dialogue"] = draft
                     dialogue_per_beat_logs.append({
@@ -410,7 +411,7 @@ class StoryOrchestrator:
             style_data = (loaded_styles or {}).get(beat_style, {})
             agent_sections = style_data.get("agent_sections", {})
             writer_guidelines = agent_sections.get("writer", "")
-            beat_token_limit = style_data.get("output_size")
+            beat_token_limit = None if config.DISABLE_TOKEN_LIMITS else style_data.get("output_size")
 
             mode = "opening" if i == 0 else "closing" if i == len(events) - 1 else "continuation"
             beat_desc = event.get("beat", str(event)) if isinstance(event, dict) else str(event)
@@ -435,10 +436,10 @@ class StoryOrchestrator:
                     })
                 elif agent_name == "dialogue":
                     d_input = self.dialogue_agent._build_prompt(
-                        scene_context, beat_desc, guidelines
+                        scene_context, event, guidelines
                     )
                     draft = self.dialogue_agent.generate(
-                        scene_context, beat_desc, guidelines
+                        scene_context, event, guidelines
                     )
                     drafts["dialogue"] = draft
                     dialogue_per_beat_logs.append({

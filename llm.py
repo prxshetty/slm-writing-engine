@@ -14,7 +14,6 @@ class LLMClient:
         self.base_url = config.LMSTUDIO["base_url"]
         self.model = model or config.LMSTUDIO["model"]
         self.temperature = temperature if temperature is not None else config.LMSTUDIO["temperature"]
-        self.max_tokens = config.LMSTUDIO["max_tokens"]
 
     def generate(
         self,
@@ -35,9 +34,10 @@ class LLMClient:
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": temperature or self.temperature,
-            "max_tokens": max_tokens or self.max_tokens,
             "stream": stream,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
 
         if stream:
             return self._stream_generate(url, headers, payload)
@@ -98,9 +98,10 @@ class LLMClient:
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": temperature or self.temperature,
-            "max_tokens": max_tokens or self.max_tokens,
             "stream": False,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         response = requests.post(url, headers=headers, json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()

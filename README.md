@@ -56,6 +56,8 @@ TOKENS_TRANSITION=400
 
 > **Important for thinking / reasoning models:** If your model supports chain-of-thought reasoning (e.g. Gemma Thinking, DeepSeek R1, Qwen-2.5-Coder), set `REASONING_MODEL=true`. This prepends a thinking preamble to every agent's system prompt, telling the model to reason step-by-step before producing its final output. The model's internal reasoning is captured via the API's `reasoning_content` field — no extra terminal output. Leave `REASONING_MODEL=false` (default) for standard instruction-tuned models.
 
+> **Disabling token limits:** To let the model run without any `max_tokens` cap (ignoring both `TOKENS_*` env vars and style `output_size`), set `DISABLE_TOKEN_LIMITS=true`. Useful for powerful models that know when to stop. Per-agent limits remain configurable for users who want them.
+
 ## Project Structure
 
 ```

@@ -22,6 +22,7 @@ LMSTUDIO = {
 }
 
 REASONING_MODEL = os.getenv("REASONING_MODEL", "").lower() in ("true", "1", "yes")
+DISABLE_TOKEN_LIMITS = os.getenv("DISABLE_TOKEN_LIMITS", "").lower() in ("true", "1", "yes")
 
 THINKING_PREAMBLE = (
     "Before every response, you MUST think through the problem internally "
@@ -33,14 +34,21 @@ THINKING_PREAMBLE = (
     "This format is REQUIRED for every response, including JSON outputs.\n\n"
 )
 
+def _resolve_max_tokens(key: str, default: int) -> int | None:
+    """Resolve per-agent max_tokens — None when limits are disabled."""
+    if DISABLE_TOKEN_LIMITS:
+        return None
+    return int(os.getenv(f"TOKENS_{key.upper()}", default))
+
+
 AGENT_CONFIG = {
-    "blueprint": {"max_tokens": int(os.getenv("TOKENS_BLUEPRINT", 2000)), "temperature": float(os.getenv("TEMPERATURE_BLUEPRINT", 0.9))},
-    "scene": {"max_tokens": int(os.getenv("TOKENS_SCENE", 600)), "temperature": float(os.getenv("TEMPERATURE_SCENE", 0.8))},
-    "dialogue": {"max_tokens": int(os.getenv("TOKENS_DIALOGUE", 800)), "temperature": float(os.getenv("TEMPERATURE_DIALOGUE", 0.85))},
-    "narration": {"max_tokens": int(os.getenv("TOKENS_NARRATION", 800)), "temperature": float(os.getenv("TEMPERATURE_NARRATION", 0.8))},
-    "decomposer": {"max_tokens": int(os.getenv("TOKENS_DECOMPOSER", 600)), "temperature": float(os.getenv("TEMPERATURE_DECOMPOSER", 0.8))},
-    "transition": {"max_tokens": int(os.getenv("TOKENS_TRANSITION", 400)), "temperature": float(os.getenv("TEMPERATURE_TRANSITION", 0.7))},
-    "writer": {"max_tokens": int(os.getenv("TOKENS_WRITER", 500)), "temperature": float(os.getenv("TEMPERATURE_WRITER", 0.85))},
+    "blueprint": {"max_tokens": _resolve_max_tokens("blueprint", 2000), "temperature": float(os.getenv("TEMPERATURE_BLUEPRINT", 0.9))},
+    "scene": {"max_tokens": _resolve_max_tokens("scene", 600), "temperature": float(os.getenv("TEMPERATURE_SCENE", 0.8))},
+    "dialogue": {"max_tokens": _resolve_max_tokens("dialogue", 800), "temperature": float(os.getenv("TEMPERATURE_DIALOGUE", 0.85))},
+    "narration": {"max_tokens": _resolve_max_tokens("narration", 800), "temperature": float(os.getenv("TEMPERATURE_NARRATION", 0.8))},
+    "decomposer": {"max_tokens": _resolve_max_tokens("decomposer", 600), "temperature": float(os.getenv("TEMPERATURE_DECOMPOSER", 0.8))},
+    "transition": {"max_tokens": _resolve_max_tokens("transition", 400), "temperature": float(os.getenv("TEMPERATURE_TRANSITION", 0.7))},
+    "writer": {"max_tokens": _resolve_max_tokens("writer", 500), "temperature": float(os.getenv("TEMPERATURE_WRITER", 0.85))},
 }
 
 TOKEN_LIMITS = {key: cfg["max_tokens"] for key, cfg in AGENT_CONFIG.items()}
