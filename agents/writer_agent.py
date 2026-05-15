@@ -17,12 +17,12 @@ MODE_INTROS = {
         "SETTING:\n{setting_draft}"
     ),
     "continuation": (
-        "This is a middle beat of the scene. Continue from the previous paragraph.\n\n"
-        "LAST TWO SENTENCES OF PREVIOUS PARAGRAPH:\n{prev_tail}"
+        "This is a middle beat of the scene.\n\n"
+        "PREVIOUS BEAT ENDED WITH:\n{prev_tail}"
     ),
     "closing": (
         "This is the final beat of the scene. Close the scene.\n\n"
-        "LAST TWO SENTENCES OF PREVIOUS PARAGRAPH:\n{prev_tail}"
+        "PREVIOUS BEAT ENDED WITH:\n{prev_tail}"
     ),
 }
 

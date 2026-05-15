@@ -294,7 +294,13 @@ def main():
                 for ev in scene_events:
                     beat = ev.get("beat", ev) if isinstance(ev, dict) else ev
                     style = ev.get("style", "general") if isinstance(ev, dict) else "general"
-                    print(f"    [{style}] {beat}")
+                    exchanges = ev.get("expected_exchanges", "") if isinstance(ev, dict) else ""
+                    flow = ev.get("conversation_flow", []) if isinstance(ev, dict) else []
+                    exchanges_label = f" [{exchanges}]" if exchanges else ""
+                    print(f"    [{style}]{exchanges_label} {beat}")
+                    if flow:
+                        for step in flow:
+                            print(f"      · {step}")
                 print(f"{'─'*40}")
                 print("\nProceed with generation for this scene? (y/n) ", end="")
                 events_approval = input().strip().lower()

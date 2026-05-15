@@ -18,6 +18,21 @@ class StateManager:
     ):
         self.characters_dir = Path(characters_dir)
         self.story_state_path = Path(story_state_path)
+        self._build_name_index()
+
+    def _build_name_index(self) -> None:
+        """Index YAML files by their `name` field for O(1) lookup."""
+        self._name_to_file = {}
+        for fpath in self.characters_dir.glob("*.yaml"):
+            if fpath.stem == "character_template":
+                continue
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                if data and data.get("name"):
+                    self._name_to_file[data["name"].lower()] = fpath
+            except Exception:
+                continue
 
     def get_character_context(
         self,
@@ -39,24 +54,12 @@ class StateManager:
         return context
 
     def get_character_profile(self, character_name: str) -> Optional[Dict]:
-        """Read a single character YAML file."""
-        yaml_path = self.characters_dir / f"{character_name.lower()}.yaml"
-        if yaml_path.exists():
-            with open(yaml_path, "r", encoding="utf-8") as f:
+        """Read a single character YAML file by its `name` field."""
+        path = self._name_to_file.get(character_name.lower())
+        if path and path.exists():
+            with open(path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f)
-
-        for fpath in self.characters_dir.glob("*.yaml"):
-            if fpath.stem == "character_template":
-                continue
-            stem = fpath.stem.lower()
-            if character_name.lower().startswith(stem) or stem.startswith(character_name.lower()):
-                with open(fpath, "r", encoding="utf-8") as f:
-                    return yaml.safe_load(f)
-
         return None
-
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
 
     def get_character_state(
         self,
