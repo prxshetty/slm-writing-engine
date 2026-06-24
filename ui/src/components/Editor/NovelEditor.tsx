@@ -3,7 +3,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { useEditorStore } from '../../stores/editorStore'
 import { useEffect, useRef } from 'react'
 import { Markdown } from 'tiptap-markdown'
-import { SimpleAssistSelectionPopup } from './SimpleAssistSelectionPopup'
+import { WritingBubbleMenu } from './WritingBubbleMenu'
 import { AiDiffHighlightExtension } from './AiDiffHighlightExtension'
 import { EditorState } from '@tiptap/pm/state'
 
@@ -99,7 +99,7 @@ export function NovelEditor({ showInlinePopup = true }: { showInlinePopup?: bool
   return (
     <div className="bg-[var(--bg)] relative">
       <EditorContent editor={editor} />
-      {showInlinePopup && <SimpleAssistSelectionPopup />}
+      {showInlinePopup && <WritingBubbleMenu />}
     </div>
   )
 }

@@ -123,6 +123,7 @@ class SimpleAssistRequest(BaseModel):
     ref_files: Optional[List[Dict[str, Any]]] = None
     available_files: List[Dict[str, str]] = Field(default_factory=list)
     active_filename: Optional[str] = None
+    skip_planner: bool = False
 
 
 
@@ -202,8 +203,6 @@ def _log_simple_assist(
     if model_used is not None:
         log_entry["model_used"] = model_used
     storage.save_simple_ai_log(log_entry)
-
-
 def extract_anchor_context(
     content: str,
     selected_text: str | None,
@@ -220,20 +219,59 @@ def extract_anchor_context(
 
     if selected_text:
         replace = True
+        found = False
         for i, p in enumerate(paragraphs):
-            if selected_text[:50] in p:
+            if selected_text in p:
                 target_idx = i
+                found = True
                 break
+        
+        if not found:
+            for i, p in enumerate(paragraphs):
+                if selected_text[:50] in p:
+                    target_idx = i
+                    found = True
+                    break
+        
+        if found:
+            target_p = paragraphs[target_idx]
+            if selected_text.strip() == target_p.strip():
+                # Full paragraph selection
+                target_paragraph = target_p
+                paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
+                paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
+            else:
+                # Sub-paragraph selection!
+                idx = target_p.find(selected_text)
+                if idx == -1 and len(selected_text) > 50:
+                    idx = target_p.find(selected_text[:50])
+                
+                if idx != -1:
+                    paragraph_before = target_p[:idx]
+                    paragraph_after = target_p[idx + len(selected_text):]
+                    target_paragraph = selected_text
+                else:
+                    target_paragraph = target_p
+                    paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
+                    paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
+        else:
+            target_paragraph = paragraphs[target_idx] if paragraphs else ""
+            paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
+            paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
+
     elif cursor_paragraph_text:
         cursor_text = cursor_paragraph_text.strip()
         for i, p in enumerate(paragraphs):
             if cursor_text[:60] in p:
                 target_idx = i
                 break
-
-    target_paragraph = paragraphs[target_idx] if paragraphs else ""
-    paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
-    paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
+        target_paragraph = paragraphs[target_idx] if paragraphs else ""
+        paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
+        paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
+    else:
+        target_paragraph = paragraphs[target_idx] if paragraphs else ""
+        paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
+        paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
 
     return paragraph_before, target_paragraph, paragraph_after, target_idx, replace
 
@@ -493,41 +531,45 @@ async def simple_assist(payload: SimpleAssistRequest):
 
         try:
             if mode == "edit":
-                yield {"data": json.dumps({"status": "planning"})}
+                if not payload.skip_planner:
+                    yield {"data": json.dumps({"status": "planning"})}
 
-                loop = asyncio.get_running_loop()
-                plan, planner_system, planner_user, planner_raw, planner_usage, planner_model = await loop.run_in_executor(
-                    None,
-                    lambda: run_planner(
-                        payload.content,
-                        payload.message,
-                        payload.selected_text,
-                        payload.cursor_paragraph_text,
-                        payload.session_id,
+                    loop = asyncio.get_running_loop()
+                    plan, planner_system, planner_user, planner_raw, planner_usage, planner_model = await loop.run_in_executor(
+                        None,
+                        lambda: run_planner(
+                            payload.content,
+                            payload.message,
+                            payload.selected_text,
+                            payload.cursor_paragraph_text,
+                            payload.session_id,
+                        )
                     )
-                )
 
-                await loop.run_in_executor(
-                    None,
-                    lambda: _log_simple_assist(
-                        mode="edit_plan",
-                        session_id=payload.session_id,
-                        system_prompt=planner_system,
-                        user_prompt=planner_user,
-                        response=planner_raw,
-                        instruction=payload.message,
-                        selected_text=payload.selected_text,
-                        edit_mode=edit_mode,
-                        success=True,
-                        model_used=planner_model,
-                        planner_output=planner_raw,
-                        prompt_tokens=planner_usage.get("prompt_tokens", 0) if planner_usage else 0,
-                        completion_tokens=planner_usage.get("completion_tokens", 0) if planner_usage else 0,
-                        total_tokens=planner_usage.get("total_tokens", 0) if planner_usage else 0,
+                    await loop.run_in_executor(
+                        None,
+                        lambda: _log_simple_assist(
+                            mode="edit_plan",
+                            session_id=payload.session_id,
+                            system_prompt=planner_system,
+                            user_prompt=planner_user,
+                            response=planner_raw,
+                            instruction=payload.message,
+                            selected_text=payload.selected_text,
+                            edit_mode=edit_mode,
+                            success=True,
+                            model_used=planner_model,
+                            planner_output=planner_raw,
+                            prompt_tokens=planner_usage.get("prompt_tokens", 0) if planner_usage else 0,
+                            completion_tokens=planner_usage.get("completion_tokens", 0) if planner_usage else 0,
+                            total_tokens=planner_usage.get("total_tokens", 0) if planner_usage else 0,
+                        )
                     )
-                )
-                context_needed = plan.get("context_needed", [])
-                query = plan.get("refined_query") or payload.message
+                    context_needed = plan.get("context_needed", [])
+                    query = plan.get("refined_query") or payload.message
+                else:
+                    context_needed = []
+                    query = payload.message
 
                 yield {"data": json.dumps({
                     "status": "context_resolved",

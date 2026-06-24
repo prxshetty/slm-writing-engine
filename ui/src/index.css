@@ -886,5 +886,35 @@ body {
   border-radius: 0.5px;
 }
 
+@property --angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes spin-border {
+  to {
+    --angle: 360deg;
+  }
+}
+
+.animate-spin-border {
+  background: conic-gradient(
+    from var(--angle),
+    transparent 75%,
+    var(--accent-brown) 100%
+  );
+  animation: spin-border 3s linear infinite;
+  border-radius: inherit;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+}
+
+
+
 
 

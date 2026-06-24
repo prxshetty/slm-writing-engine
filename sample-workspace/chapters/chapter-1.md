@@ -4,7 +4,7 @@ Elara Vance spends the night obsessively painting over the same canvas until the
 
 She discovers someone online accusing her breakout work of being derivative. The comments get under her skin fast. She spirals, starts comparing herself to artists her age who already seem untouchable, and nearly destroys the canvas entirely before stopping herself.
 
-Kaelen Rhys arrives uninvited after noticing she vanished from a gallery event earlier that evening. He immediately senses she’s unstable but handles it with sarcasm instead of concern, which only escalates things. Their argument turns personal fast. Kaelen accuses her of making art she thinks important people want instead of making anything real. Elara fires back that Kaelen romanticizes failure because he’s terrified of ambition.
+Elara snarls at Kaelen, ice in her gaze. "You think you know everything," she hisses. "Prove it—what makes your doodles so much better?" He scoffs, a faint grin tugging at his lips. "Yeah, right? I’ve seen those stuffy galleries full of pretenders too." She snaps back, barely holding in her seething rage.
 
 During the fight, Kaelen notices an older hidden painting turned against the wall — raw, strange, emotionally honest, completely unlike her polished gallery work. He realizes she’s been hiding her best work because it scares her.
 

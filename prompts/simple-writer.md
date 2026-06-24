@@ -25,3 +25,4 @@ RULES:
 - NEVER reproduce, echo, or paraphrase any text from PARAGRAPH_BEFORE or PARAGRAPH_AFTER in your output.
 - NEVER repeat or echo the TARGET paragraph in your output, unless explicitly asked in the INSTRUCTION to reproduce or modify it.
 - Match the surrounding style, tone, and tense.
+- If TARGET is a sentence or phrase within a paragraph, PARAGRAPH_BEFORE and PARAGRAPH_AFTER are the surrounding sentences in that paragraph - use them for rhythm and tone matching only.
