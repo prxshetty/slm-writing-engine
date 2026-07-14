@@ -9,17 +9,17 @@ Use Edit mode when you want the AI to modify or add content. The behavior depend
 ### Replace (with text selected)
 
 1. **Highlight** the text you want to change.
-2. Click the floating **+ Add to Assist** button that appears above the selection.
-3. Type your instruction (e.g., "Make this more dramatic", "Shorten to two sentences").
-4. Press Enter or click submit.
+2. A **Writing Bubble Menu** appears with formatting options, a node selector (paragraph/heading levels), and action buttons.
+3. Click **Rewrite** to open an inline instruction input.
+4. Type your instruction (e.g., "Make this more dramatic", "Shorten to two sentences") and press Enter.
 5. The AI rewrites only the selected portion -- surrounding text stays untouched.
 
 **How replacement works:**
 
-The backend finds which paragraph contains your selection and extracts a three-paragraph window:
-- Paragraph above (context)
-- Target paragraph (contains your selection)
-- Paragraph below (context)
+The backend finds which paragraph contains your selection and extracts context:
+
+- **Full paragraph selection**: If you select an entire paragraph, the backend sends the paragraph above, your target, and the paragraph below as a three-paragraph window.
+- **Sub-paragraph selection**: If you select a sentence or phrase within a paragraph, the backend extracts the surrounding text *within that same paragraph* as before/after context. This allows the Writer to match rhythm and tone of the surrounding sentences.
 
 The Writer agent receives this context plus your instruction and generates new text. The generated text then replaces your selected content directly -- the frontend deletes the selection and inserts the AI output in its place.
 
@@ -50,13 +50,10 @@ Use Chat mode for brainstorming, asking questions, or discussing your content wi
 
 ## Context Window
 
-In Edit mode, the AI always receives exactly three paragraphs of surrounding context:
+In Edit mode, the AI receives surrounding context to help it match tone and style:
 
-```
-[Paragraph above]
-[Your target -- either selected text or the paragraph containing cursor]
-[Paragraph below]
-```
+- **Full paragraph selection**: A three-paragraph window (paragraph above, target paragraph, paragraph below).
+- **Sub-paragraph selection**: The text before and after your selection *within the same paragraph*, plus the full paragraphs above and below if available.
 
 This keeps token usage low and focused, which is especially important for smaller local models. The Writer agent is instructed to never echo or reproduce the surrounding paragraphs -- only to produce new text for the target.
 
@@ -73,6 +70,10 @@ The `@filename` chips and selection tag in the input area serve as a user refere
 The **Planner** scans available workspace manifests and document structure to determine which context files are relevant. It receives the document outline (optional), selected or cursor-anchored text, and prior edit history.
 
 The **Writer** is stateless -- each edit request is processed independently. It receives only the three-paragraph window around your cursor plus the files resolved by the Planner.
+
+### Bubble Menu Rewrite (skip Planner)
+
+The Writing Bubble Menu's **Rewrite** button provides a faster path for direct rewrites. It bypasses the Planner entirely and sends your instruction directly to the Writer with only the paragraph context. Use this for quick, focused edits when you don't need workspace context (character files, style guides, etc.).
 
 ### Chat Mode
 
