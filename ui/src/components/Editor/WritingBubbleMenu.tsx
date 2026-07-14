@@ -191,7 +191,7 @@ export function WritingBubbleMenu() {
 
     // ── Fire rewrite ──────────────────────────────────────────────────────────
     const handleRewriteSubmit = useCallback(async () => {
-        if (!selectedText || !selectionRange || isStreaming) return
+        if (!selectedText || !selectionRange || isStreaming || !editor) return
 
         const finalInstruction =
             instruction.trim() ||
