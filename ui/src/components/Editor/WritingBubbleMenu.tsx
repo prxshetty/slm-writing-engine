@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { BubbleMenu } from '@tiptap/react/menus'
+import type { Editor } from '@tiptap/core'
 import { ChevronDown, Check, TextIcon, Heading1, Heading2, Heading3 } from 'lucide-react'
 import { useEditorStore } from '../../stores/editorStore'
 import { API_BASE } from '../../lib/api'
@@ -9,9 +10,9 @@ const NODE_ITEMS = [
     {
         name: 'Text',
         icon: TextIcon,
-        command: (editor: any) =>
+        command: (editor: Editor) =>
             editor.chain().focus().toggleNode('paragraph', 'paragraph').run(),
-        isActive: (editor: any) =>
+        isActive: (editor: Editor) =>
             editor.isActive('paragraph') &&
             !editor.isActive('bulletList') &&
             !editor.isActive('orderedList'),
@@ -19,24 +20,24 @@ const NODE_ITEMS = [
     {
         name: 'Heading 1',
         icon: Heading1,
-        command: (editor: any) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
-        isActive: (editor: any) => editor.isActive('heading', { level: 1 }),
+        command: (editor: Editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
+        isActive: (editor: Editor) => editor.isActive('heading', { level: 1 }),
     },
     {
         name: 'Heading 2',
         icon: Heading2,
-        command: (editor: any) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-        isActive: (editor: any) => editor.isActive('heading', { level: 2 }),
+        command: (editor: Editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+        isActive: (editor: Editor) => editor.isActive('heading', { level: 2 }),
     },
     {
         name: 'Heading 3',
         icon: Heading3,
-        command: (editor: any) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
-        isActive: (editor: any) => editor.isActive('heading', { level: 3 }),
+        command: (editor: Editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+        isActive: (editor: Editor) => editor.isActive('heading', { level: 3 }),
     },
 ]
 
-function NodeSelector({ editor }: { editor: any }) {
+function NodeSelector({ editor }: { editor: Editor }) {
     const [open, setOpen] = useState(false)
     const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -99,38 +100,38 @@ const FORMAT_ITEMS = [
     {
         name: 'bold',
         label: 'B',
-        command: (e: any) => e.chain().focus().toggleBold().run(),
-        isActive: (e: any) => e.isActive('bold'),
+        command: (e: Editor) => e.chain().focus().toggleBold().run(),
+        isActive: (e: Editor) => e.isActive('bold'),
         className: 'font-bold',
         title: 'Bold',
     },
     {
         name: 'italic',
         label: 'I',
-        command: (e: any) => e.chain().focus().toggleItalic().run(),
-        isActive: (e: any) => e.isActive('italic'),
+        command: (e: Editor) => e.chain().focus().toggleItalic().run(),
+        isActive: (e: Editor) => e.isActive('italic'),
         className: 'italic',
         title: 'Italic',
     },
     {
         name: 'strike',
         label: 'S',
-        command: (e: any) => e.chain().focus().toggleStrike().run(),
-        isActive: (e: any) => e.isActive('strike'),
+        command: (e: Editor) => e.chain().focus().toggleStrike().run(),
+        isActive: (e: Editor) => e.isActive('strike'),
         className: 'line-through',
         title: 'Strikethrough',
     },
     {
         name: 'code',
         label: '<>',
-        command: (e: any) => e.chain().focus().toggleCode().run(),
-        isActive: (e: any) => e.isActive('code'),
+        command: (e: Editor) => e.chain().focus().toggleCode().run(),
+        isActive: (e: Editor) => e.isActive('code'),
         className: 'font-mono text-[10.5px]',
         title: 'Inline code',
     },
 ]
 
-function FormatButtons({ editor }: { editor: any }) {
+function FormatButtons({ editor }: { editor: Editor }) {
     return (
         <div className="flex items-center gap-0.5">
             {FORMAT_ITEMS.map((item) => (
