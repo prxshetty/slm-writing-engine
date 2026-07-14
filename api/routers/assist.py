@@ -243,12 +243,14 @@ def extract_anchor_context(
             else:
                 # Sub-paragraph selection!
                 idx = target_p.find(selected_text)
+                match_len = len(selected_text)
                 if idx == -1 and len(selected_text) > 50:
                     idx = target_p.find(selected_text[:50])
-                
+                    match_len = 50
+
                 if idx != -1:
                     paragraph_before = target_p[:idx]
-                    paragraph_after = target_p[idx + len(selected_text):]
+                    paragraph_after = target_p[idx + match_len:]
                     target_paragraph = selected_text
                 else:
                     target_paragraph = target_p

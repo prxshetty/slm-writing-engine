@@ -219,11 +219,14 @@ export function WritingBubbleMenu() {
             const reader = res.body.getReader()
             const decoder = new TextDecoder()
             let outputText = ''
+            let buffer = ''
 
             while (true) {
                 const { done, value } = await reader.read()
                 if (done) break
-                const lines = decoder.decode(value).split('\n')
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split('\n')
+                buffer = lines.pop() || ''
                 for (const line of lines) {
                     if (!line.startsWith('data: ')) continue
                     try {
@@ -239,6 +242,7 @@ export function WritingBubbleMenu() {
             }
         } catch (err) {
             console.error('Rewrite failed:', err)
+            window.alert(`Rewrite failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
         } finally {
             setIsStreaming(false)
             setMode('default')
