@@ -199,6 +199,7 @@ export function WritingBubbleMenu() {
 
         setIsStreaming(true)
         const { from, to } = selectionRange
+        editor.setEditable(false)
 
         try {
             const res = await fetch(`${API_BASE}/api/assist/simple`, {
@@ -233,7 +234,23 @@ export function WritingBubbleMenu() {
                         const evt = JSON.parse(line.slice(6))
                         if (evt.status === 'chunk') outputText += evt.chunk
                         else if (evt.status === 'applied' && evt.output) outputText = evt.output
-                    } catch { /* malformed line */ }
+                        else if (evt.status === 'error') throw new Error(evt.detail || 'Server error during rewrite')
+                    } catch (e) {
+                        if (e instanceof Error && e.message !== 'Server error during rewrite') continue
+                        throw e
+                    }
+                }
+            }
+
+            if (buffer.trim().startsWith('data: ')) {
+                try {
+                    const evt = JSON.parse(buffer.trim().slice(6))
+                    if (evt.status === 'chunk') outputText += evt.chunk
+                    else if (evt.status === 'applied' && evt.output) outputText = evt.output
+                    else if (evt.status === 'error') throw new Error(evt.detail || 'Server error during rewrite')
+                } catch (e) {
+                    if (e instanceof Error && e.message !== 'Server error during rewrite') { /* malformed trailing line */ }
+                    else throw e
                 }
             }
 
@@ -244,6 +261,7 @@ export function WritingBubbleMenu() {
             console.error('Rewrite failed:', err)
             window.alert(`Rewrite failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
         } finally {
+            editor.setEditable(true)
             setIsStreaming(false)
             setMode('default')
             setInstruction('')
