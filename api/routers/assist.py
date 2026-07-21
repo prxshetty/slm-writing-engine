@@ -4,7 +4,6 @@ import asyncio
 import difflib
 import threading
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +11,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from api.services.file_storage import storage
+from api.services.assist_helpers import extract_anchor_context, _load_simple_prompt
 import llm
 import config
 from api.services import context_injector
@@ -100,15 +100,6 @@ def _pick_writer_max_tokens() -> int | None:
     mapping = {"concise": 250, "balanced": 500, "expansive": 1000, "none": None}
     val = mapping.get(s.get("default_verbosity", "balanced"), 500)
     return val
-
-
-def _load_simple_prompt(filename: str) -> str:
-    path = Path(__file__).parent.parent.parent / "prompts" / filename
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except Exception as e:
-        print(f"Error loading prompt {filename} from {path}: {e}")
-        return ""
 
 
 class SimpleAssistRequest(BaseModel):
@@ -202,79 +193,7 @@ def _log_simple_assist(
     if model_used is not None:
         log_entry["model_used"] = model_used
     storage.save_simple_ai_log(log_entry)
-def extract_anchor_context(
-    content: str,
-    selected_text: str | None,
-    cursor_paragraph_text: str | None = None,
-) -> tuple[str, str, str, int, bool]:
-    """
-    Returns paragraph_before, target_paragraph, paragraph_after, target_idx, replace.
-    replace=True  → caller should overwrite the target paragraph.
-    replace=False → caller should insert new content after the target paragraph.
-    """
-    paragraphs = [p for p in content.split('\n\n') if p.strip()]
-    target_idx = len(paragraphs) - 1 # default to end
-    replace = False
 
-    if selected_text:
-        replace = True
-        found = False
-        for i, p in enumerate(paragraphs):
-            if selected_text in p:
-                target_idx = i
-                found = True
-                break
-        
-        if not found:
-            for i, p in enumerate(paragraphs):
-                if selected_text[:50] in p:
-                    target_idx = i
-                    found = True
-                    break
-        
-        if found:
-            target_p = paragraphs[target_idx]
-            if selected_text.strip() == target_p.strip():
-                # Full paragraph selection
-                target_paragraph = target_p
-                paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
-                paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
-            else:
-                # Sub-paragraph selection!
-                idx = target_p.find(selected_text)
-                match_len = len(selected_text)
-                if idx == -1 and len(selected_text) > 50:
-                    idx = target_p.find(selected_text[:50])
-                    match_len = 50
-
-                if idx != -1:
-                    paragraph_before = target_p[:idx]
-                    paragraph_after = target_p[idx + match_len:]
-                    target_paragraph = selected_text
-                else:
-                    target_paragraph = target_p
-                    paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
-                    paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
-        else:
-            target_paragraph = paragraphs[target_idx] if paragraphs else ""
-            paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
-            paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
-
-    elif cursor_paragraph_text:
-        cursor_text = cursor_paragraph_text.strip()
-        for i, p in enumerate(paragraphs):
-            if cursor_text[:60] in p:
-                target_idx = i
-                break
-        target_paragraph = paragraphs[target_idx] if paragraphs else ""
-        paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
-        paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
-    else:
-        target_paragraph = paragraphs[target_idx] if paragraphs else ""
-        paragraph_before = paragraphs[target_idx - 1] if target_idx > 0 else ""
-        paragraph_after = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
-
-    return paragraph_before, target_paragraph, paragraph_after, target_idx, replace
 
 
 def _get_active_context_window(settings: dict) -> int:

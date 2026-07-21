@@ -3,6 +3,7 @@ import { AtSign, Code2, MousePointer2, Settings, Trash2 } from 'lucide-react'
 import { useEditorStore } from '../stores/editorStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { API_BASE } from '../lib/api'
+import { streamSSE } from '../lib/stream-sse'
 import type { FileEntry } from '../stores/editorStore'
 
 interface SimpleLogEntry {
@@ -727,115 +728,87 @@ export function SimpleAssist() {
         }
       }
 
-      const res = await fetch(`${API_BASE}/api/assist/simple`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: abortRef.current.signal,
-      })
-      if (!res.ok) {
-        throw new Error('Edit failed')
-      }
-
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let accumulatedOutput = ''
-      let isStreaming = false
       const startPos = localHasSelection && selectionInfo ? selectionInfo.from : anchorPosition
       let currentEndPos = localHasSelection && selectionInfo ? selectionInfo.to : anchorPosition
+      let isStreaming = false
       const previousContent = useEditorStore.getState().content
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const cleanLine = line.trim()
-          if (!cleanLine.startsWith('data: ')) continue
-          const rawData = cleanLine.slice(6)
-          try {
-            const data = JSON.parse(rawData)
-            if (data.status === 'planning') {
-              setIsPlanning(true)
-              setIsGenerating(false)
-            } else if (data.status === 'context_resolved') {
-              if (Array.isArray(data.context_needed)) {
-                setPlannerContextFiles(data.context_needed)
-              }
-            } else if (data.status === 'generating') {
-              setIsPlanning(false)
-              setIsGenerating(true)
-            } else if (data.status === 'thinking_chunk') {
-              setStreamingThinkingText(prev => prev + (data.chunk as string))
-            } else if (data.status === 'chunk') {
-              setIsPlanning(false)
-              setIsGenerating(true)
-              const chunk = data.chunk as string
-              accumulatedOutput += chunk
-              const liveEditor = useEditorStore.getState().editor || activeEditor
-              if (liveEditor && liveEditor.view && liveEditor.state && !liveEditor.isDestroyed) {
-                let tr
-                if (!isStreaming) {
-                  tr = liveEditor.state.tr.insertText(chunk, startPos, currentEndPos)
-                  isStreaming = true
-                } else {
-                  tr = liveEditor.state.tr.insertText(chunk, currentEndPos)
-                }
-                liveEditor.view.dispatch(tr)
-                currentEndPos = tr.mapping.map(currentEndPos)
-                liveEditor.commands.setAiHighlight(startPos, currentEndPos)
-                liveEditor.commands.setTextSelection(currentEndPos)
-              }
-            } else if (data.status === 'applied') {
-              if (data.model_used) {
-                useEditorStore.getState().setActiveModel(data.model_used)
-              }
-              const output = data.output
-
-              const liveEditor = useEditorStore.getState().editor || activeEditor
-              if (liveEditor && liveEditor.view && liveEditor.state && !liveEditor.isDestroyed) {
-                const setAiPendingEdit = useEditorStore.getState().setAiPendingEdit
-                const beforeSize = liveEditor.state.doc.content.size
-
-                setAiPendingEdit({
-                  previousContent,
-                  selectionRange: localHasSelection && selectionInfo ? { from: selectionInfo.from, to: selectionInfo.to } : null,
-                  highlightFrom: startPos
-                })
-
-                let chain = liveEditor.chain()
-                chain = chain.deleteRange({ from: startPos, to: currentEndPos })
-                chain = chain.insertContentAt(startPos, output)
-                chain.run()
-
-                const afterSize = liveEditor.state.doc.content.size
-                const endPos = currentEndPos + (afterSize - beforeSize)
-
-                if (endPos > startPos) {
-                  liveEditor.commands.setAiHighlight(startPos, endPos)
-                  liveEditor.commands.setTextSelection(endPos)
-                }
-
-                const storage = liveEditor.storage as unknown as MarkdownStorage
-                if (storage.markdown) {
-                  const md = storage.markdown.getMarkdown()
-                  setContent(md)
-                  if (currentFilePath) updateFileContent(currentFilePath, md)
-                }
-              }
-              setPendingEditSelection(null)
-            } else if (data.status === 'error') {
-              throw new Error(data.detail || 'Edit failed')
+      await streamSSE(
+        `${API_BASE}/api/assist/simple`,
+        body,
+        (status, data) => {
+          if (status === 'planning') {
+            setIsPlanning(true)
+            setIsGenerating(false)
+          } else if (status === 'context_resolved') {
+            if (Array.isArray(data.context_needed)) {
+              setPlannerContextFiles(data.context_needed)
             }
-          } catch (e) {
-            console.error('Error parsing stream chunk:', e)
+          } else if (status === 'generating') {
+            setIsPlanning(false)
+            setIsGenerating(true)
+          } else if (status === 'thinking_chunk') {
+            setStreamingThinkingText(prev => prev + (data.chunk as string))
+          } else if (status === 'chunk') {
+            setIsPlanning(false)
+            setIsGenerating(true)
+            const chunk = data.chunk as string
+            const liveEditor = useEditorStore.getState().editor || activeEditor
+            if (liveEditor && liveEditor.view && liveEditor.state && !liveEditor.isDestroyed) {
+              let tr
+              if (!isStreaming) {
+                tr = liveEditor.state.tr.insertText(chunk, startPos, currentEndPos)
+                isStreaming = true
+              } else {
+                tr = liveEditor.state.tr.insertText(chunk, currentEndPos)
+              }
+              liveEditor.view.dispatch(tr)
+              currentEndPos = tr.mapping.map(currentEndPos)
+              liveEditor.commands.setAiHighlight(startPos, currentEndPos)
+              liveEditor.commands.setTextSelection(currentEndPos)
+            }
+          } else if (status === 'applied') {
+            if (data.model_used) {
+              useEditorStore.getState().setActiveModel(data.model_used as string)
+            }
+            const output = data.output as string
+
+            const liveEditor = useEditorStore.getState().editor || activeEditor
+            if (liveEditor && liveEditor.view && liveEditor.state && !liveEditor.isDestroyed) {
+              const setAiPendingEdit = useEditorStore.getState().setAiPendingEdit
+              const beforeSize = liveEditor.state.doc.content.size
+
+              setAiPendingEdit({
+                previousContent,
+                selectionRange: localHasSelection && selectionInfo ? { from: selectionInfo.from, to: selectionInfo.to } : null,
+                highlightFrom: startPos
+              })
+
+              let chain = liveEditor.chain()
+              chain = chain.deleteRange({ from: startPos, to: currentEndPos })
+              chain = chain.insertContentAt(startPos, output)
+              chain.run()
+
+              const afterSize = liveEditor.state.doc.content.size
+              const endPos = currentEndPos + (afterSize - beforeSize)
+
+              if (endPos > startPos) {
+                liveEditor.commands.setAiHighlight(startPos, endPos)
+                liveEditor.commands.setTextSelection(endPos)
+              }
+
+              const storage = liveEditor.storage as unknown as MarkdownStorage
+              if (storage.markdown) {
+                const md = storage.markdown.getMarkdown()
+                setContent(md)
+                if (currentFilePath) updateFileContent(currentFilePath, md)
+              }
+            }
+            setPendingEditSelection(null)
           }
-        }
-      }
+        },
+        abortRef.current.signal
+      )
       await fetchLogs()
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
@@ -913,61 +886,34 @@ export function SimpleAssist() {
         body.selected_text = selectionText
       }
 
-      const res = await fetch(`${API_BASE}/api/assist/simple`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: abortRef.current.signal,
-      })
-      if (!res.ok) {
-        throw new Error('Chat failed')
-      }
-
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const cleanLine = line.trim()
-          if (!cleanLine.startsWith('data: ')) continue
-          const rawData = cleanLine.slice(6)
-          try {
-            const data = JSON.parse(rawData)
-            if (data.status === 'planning') {
-              setIsPlanning(true)
-              setIsGenerating(false)
-            } else if (data.status === 'context_resolved') {
-              if (Array.isArray(data.context_needed)) {
-                setPlannerContextFiles(data.context_needed)
-              }
-            } else if (data.status === 'generating') {
-              setIsPlanning(false)
-              setIsGenerating(true)
-            } else if (data.status === 'thinking_chunk') {
-              setStreamingThinkingText(prev => prev + (data.chunk as string))
-            } else if (data.status === 'chunk') {
-              setIsPlanning(false)
-              setIsGenerating(true)
-              setStreamingChatText(prev => prev + (data.chunk as string))
-            } else if (data.status === 'chat') {
-              if (data.model_used) {
-                useEditorStore.getState().setActiveModel(data.model_used)
-              }
-            } else if (data.status === 'error') {
-              throw new Error(data.detail || 'Chat failed')
+      await streamSSE(
+        `${API_BASE}/api/assist/simple`,
+        body,
+        (status, data) => {
+          if (status === 'planning') {
+            setIsPlanning(true)
+            setIsGenerating(false)
+          } else if (status === 'context_resolved') {
+            if (Array.isArray(data.context_needed)) {
+              setPlannerContextFiles(data.context_needed)
             }
-          } catch (e) {
-            console.error('Error parsing stream chunk:', e)
+          } else if (status === 'generating') {
+            setIsPlanning(false)
+            setIsGenerating(true)
+          } else if (status === 'thinking_chunk') {
+            setStreamingThinkingText(prev => prev + (data.chunk as string))
+          } else if (status === 'chunk') {
+            setIsPlanning(false)
+            setIsGenerating(true)
+            setStreamingChatText(prev => prev + (data.chunk as string))
+          } else if (status === 'chat') {
+            if (data.model_used) {
+              useEditorStore.getState().setActiveModel(data.model_used as string)
+            }
           }
-        }
-      }
+        },
+        abortRef.current.signal
+      )
       await fetchLogs()
     } catch (err) {
       if ((err as Error).name === 'AbortError') {

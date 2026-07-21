@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/core'
 import { ChevronDown, Check, TextIcon, Heading1, Heading2, Heading3 } from 'lucide-react'
 import { useEditorStore } from '../../stores/editorStore'
 import { API_BASE } from '../../lib/api'
+import { streamSSE } from '../../lib/stream-sse'
 
 // ─── Node selector (paragraph / heading) ─────────────────────────────────────
 const NODE_ITEMS = [
@@ -203,57 +204,25 @@ export function WritingBubbleMenu() {
         editor.setEditable(false)
 
         try {
-            const res = await fetch(`${API_BASE}/api/assist/simple`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            let outputText = ''
+            let streamError: string | null = null
+            await streamSSE(
+                `${API_BASE}/api/assist/simple`,
+                {
                     content,
                     message: finalInstruction,
                     mode: 'edit',
                     selected_text: selectedText,
-                    selection_intent: 'edit',
                     skip_planner: true,
-                }),
-            })
-
-            if (!res.ok || !res.body) throw new Error('Stream failed')
-
-            const reader = res.body.getReader()
-            const decoder = new TextDecoder()
-            let outputText = ''
-            let buffer = ''
-
-            while (true) {
-                const { done, value } = await reader.read()
-                if (done) break
-                buffer += decoder.decode(value, { stream: true })
-                const lines = buffer.split('\n')
-                buffer = lines.pop() || ''
-                for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue
-                    try {
-                        const evt = JSON.parse(line.slice(6))
-                        if (evt.status === 'chunk') outputText += evt.chunk
-                        else if (evt.status === 'applied' && evt.output) outputText = evt.output
-                        else if (evt.status === 'error') throw new Error(evt.detail || 'Server error during rewrite')
-                    } catch (e) {
-                        if (e instanceof Error && e.message !== 'Server error during rewrite') continue
-                        throw e
-                    }
+                },
+                (status, data) => {
+                    if (status === 'chunk') outputText += data.chunk as string
+                    else if (status === 'applied' && data.output) outputText = data.output as string
+                    else if (status === 'error') streamError = (data.detail as string) || 'Server error during rewrite'
                 }
-            }
+            )
 
-            if (buffer.trim().startsWith('data: ')) {
-                try {
-                    const evt = JSON.parse(buffer.trim().slice(6))
-                    if (evt.status === 'chunk') outputText += evt.chunk
-                    else if (evt.status === 'applied' && evt.output) outputText = evt.output
-                    else if (evt.status === 'error') throw new Error(evt.detail || 'Server error during rewrite')
-                } catch (e) {
-                    if (e instanceof Error && e.message !== 'Server error during rewrite') { /* malformed trailing line */ }
-                    else throw e
-                }
-            }
+            if (streamError) throw new Error(streamError)
 
             if (outputText && editor) {
                 editor.chain().focus().deleteRange({ from, to }).insertContentAt(from, outputText).run()
