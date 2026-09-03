@@ -3,8 +3,10 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import type { Editor } from '@tiptap/core'
 import { ChevronDown, Check, TextIcon, Heading1, Heading2, Heading3 } from 'lucide-react'
 import { useEditorStore } from '../../stores/editorStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { API_BASE } from '../../lib/api'
 import { streamSSE } from '../../lib/stream-sse'
+import { applyHarnessResult } from '../../lib/applyHarnessResult'
 
 // ─── Node selector (paragraph / heading) ─────────────────────────────────────
 const NODE_ITEMS = [
@@ -161,6 +163,7 @@ function Divider() {
 export function WritingBubbleMenu() {
     const { editor, selectedText, selectionRange, setPendingEditSelection, content } =
         useEditorStore()
+    const harness = useSettingsStore((s) => s.settings?.default_harness) || 'none'
 
     const [mode, setMode] = useState<'default' | 'rewrite'>('default')
     const [instruction, setInstruction] = useState('')
@@ -206,25 +209,34 @@ export function WritingBubbleMenu() {
         try {
             let outputText = ''
             let streamError: string | null = null
+            let harnessDone = false
+            let harnessPromise: Promise<{ conflicts: number }> | null = null
+            const baseContent = useEditorStore.getState().content
             await streamSSE(
                 `${API_BASE}/api/assist/simple`,
                 {
                     content,
                     message: finalInstruction,
                     mode: 'edit',
+                    harness,
                     selected_text: selectedText,
                     skip_planner: true,
                 },
                 (status, data) => {
-                    if (status === 'chunk') outputText += data.chunk as string
+                    if (status === 'chunk' && harness === 'none') outputText += data.chunk as string
                     else if (status === 'applied' && data.output) outputText = data.output as string
+                    else if (status === 'harness_done') {
+                        harnessDone = true
+                        harnessPromise = applyHarnessResult(baseContent, harness)
+                    }
                     else if (status === 'error') streamError = (data.detail as string) || 'Server error during rewrite'
                 }
             )
 
+            if (harnessPromise) await harnessPromise
             if (streamError) throw new Error(streamError)
 
-            if (outputText && editor) {
+            if (outputText && editor && !harnessDone) {
                 editor.chain().focus().deleteRange({ from, to }).insertContentAt(from, outputText).run()
             }
         } catch (err) {
@@ -236,7 +248,7 @@ export function WritingBubbleMenu() {
             setMode('default')
             setInstruction('')
         }
-    }, [selectedText, selectionRange, isStreaming, instruction, content, editor])
+    }, [selectedText, selectionRange, isStreaming, instruction, content, editor, harness])
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') { e.preventDefault(); handleRewriteSubmit() }

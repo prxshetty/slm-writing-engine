@@ -18,6 +18,8 @@ export interface AppSettings {
   }>
   default_context_window?: number
   active_endpoint: string | null
+  default_harness?: string
+  harnesses?: Record<string, { executable?: string; model?: string }>
   is_thinking?: boolean
   theme?: 'light' | 'dark' | 'system'
   theme_family?: 'sand' | 'notion' | 'sage' | 'blue' | 'rose'

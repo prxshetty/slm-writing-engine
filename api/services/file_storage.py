@@ -76,6 +76,8 @@ class FileStorageService:
             "ignored_ref_files": [],
             "endpoints": {},
             "active_endpoint": None,
+            "default_harness": "none",
+            "harnesses": {},
             "theme": "light",
             "theme_family": "sand",
             "text_style": "system",

@@ -2,6 +2,7 @@ import json
 import uuid
 import asyncio
 import difflib
+import re
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -15,9 +16,180 @@ from api.services.assist_helpers import extract_anchor_context, _load_simple_pro
 import llm
 import config
 from api.services import context_injector
+from api.services import harness_env
 
 router = APIRouter(prefix="/api/assist", tags=["assist"])
 
+HARNESS_DESCRIPTORS = {
+    "opencode": {
+        "name": "OpenCode",
+        "command": "opencode",
+        "version_args": ["--version"],
+        "models_args": ["models"],
+        "subcommand": "run",
+        # --dir pins the project root: `run` otherwise resolves it
+        # itself (and created files outside the workspace).
+        "workspace_flag": "--dir",
+        "model_flag": "-m",
+        # Margin chat → plan (read-only), Margin edit → build (edits files).
+        "agent_flag": "--agent",
+        "mode_agents": {"chat": "plan", "edit": "build"},
+        # Structured stdout: `run --format json` emits raw JSON events
+        # (text/reasoning/tool_use/step_finish). Opencode-only.
+        "structured": True,
+    },
+    "claude-code": {
+        "name": "Claude Code",
+        "command": "claude",
+        "version_args": ["--version"],
+        "models_args": [],
+        "static_models": [
+            "claude-fable-5-1",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-haiku-4-5-20251001",
+        ],
+        "prompt_flag": "-p",
+        "model_flag": "--model",
+    },
+    "codex": {
+        "name": "Codex",
+        "command": "codex",
+        "version_args": ["--version"],
+        "models_args": [],
+        "subcommand": "exec",
+        "workspace_flag": "-C",
+        "model_flag": "-m",
+    },
+    "agy": {
+        "name": "Agy",
+        "command": "agy",
+        "version_args": ["--version"],
+        "models_args": ["models"],
+        "workspace_flag": "--add-dir",
+        "prompt_flag": "--print",
+        "model_flag": "--model",
+        # Headless print mode auto-denies permission prompts; accept-edits
+        # pre-approves file edits (review still happens in Margin's diff UI).
+        "extra_args": ["--mode", "accept-edits"],
+    },
+}
+
+
+def _resolve_harness_argv(harness_id: str, prompt: str, cwd: str, mode: str = "edit") -> list:
+    """Build argv for a harness, honoring custom executable paths in settings
+    (`harnesses: { "<id>": { "executable": "/custom/path" } }`)."""
+    desc = HARNESS_DESCRIPTORS.get(harness_id)
+    if not desc:
+        raise ValueError(f"Unknown harness: {harness_id}")
+    s = storage.get_settings()
+    overrides = s.get("harnesses") or {}
+    custom = (overrides.get(harness_id) or {}).get("executable")
+    exe = custom or harness_env.which_harness(desc["command"])
+    if not exe:
+        raise ValueError(
+            f"{desc['name']} not found — install it or set a custom path in Settings > Harnesses"
+        )
+    argv = [exe]
+    if desc.get("subcommand"):
+        argv.append(desc["subcommand"])
+    model = (overrides.get(harness_id) or {}).get("model")
+    if model and desc.get("model_flag"):
+        argv += [desc["model_flag"], model]
+    agent = (desc.get("mode_agents") or {}).get(mode)
+    if agent and desc.get("agent_flag"):
+        argv += [desc["agent_flag"], agent]
+    if desc.get("structured"):
+        argv += ["--format", "json"]
+    # Workspace scope BEFORE the prompt: agy's --print swallows the next
+    # arg, so the prompt must always be last.
+    if desc.get("workspace_flag"):
+        argv += [desc["workspace_flag"], cwd]
+    if desc.get("extra_args"):
+        argv += list(desc["extra_args"])
+    if desc.get("prompt_flag"):
+        argv += [desc["prompt_flag"], prompt]
+    else:
+        argv.append(prompt)
+    if desc.get("cwd_flag"):
+        argv += [desc["cwd_flag"], cwd]
+    return argv
+
+# Agent CLIs emit terminal formatting (colors, spinners: ✗ ✱ → $).
+# Strip ANSI escape sequences so chat output/history stays readable.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\r")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
+def _summarize_tool_input(tool: str, state: dict) -> str:
+    """Compact one-line summary for a tool call (name + file, no content)."""
+    inp = (state or {}).get("input") or {}
+    for key in ("filePath", "path", "file", "pattern", "command"):
+        val = inp.get(key)
+        if val:
+            s = str(val)
+            return s.split("/")[-1] if "/" in s and key != "command" else s[:80]
+    return ""
+
+
+def _parse_opencode_line(line: str):
+    """Parse one `--format json` line into [(qtype, val)] queue items.
+
+    text → chunk, reasoning → thinking, tool_use → tool summary,
+    step_finish → usage tokens. Diffs/tool outputs are dropped: the
+    editor owns diff display and tool payloads can be huge.
+    """
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        d = json.loads(line)
+    except Exception:
+        return [("chunk", _strip_ansi(line))]
+    part = d.get("part") or {}
+    ptype = part.get("type", "")
+    if ptype == "text" and part.get("text"):
+        return [("chunk", part["text"])]
+    if ptype == "reasoning" and part.get("text"):
+        return [("thinking", part["text"])]
+    if d.get("type") == "tool_use":
+        tool = part.get("tool", "tool")
+        detail = _summarize_tool_input(tool, part.get("state") or {})
+        return [("tool", {"tool": tool, "detail": detail})]
+    if ptype == "step-finish":
+        toks = (part.get("tokens") or {})
+        return [("usage", {
+            "prompt_tokens": toks.get("input", 0),
+            "completion_tokens": toks.get("output", 0),
+        })]
+    return []
+
+
+async def run_harness(argv: list, cwd: str, stop_event: threading.Event, queue: asyncio.Queue):
+    proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.PIPE,
+                                                stderr=asyncio.subprocess.STDOUT, cwd=cwd,
+                                                stdin=asyncio.subprocess.DEVNULL,
+                                                env=harness_env.normalized_env(),
+                                                )
+    try:
+        while True:
+            if stop_event.is_set():
+                proc.terminate()
+                break
+            try:
+                chunk = await asyncio.wait_for(proc.stdout.read(4096), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            if not chunk:
+                break
+            queue.put_nowait(("chunk", _strip_ansi(chunk.decode("utf-8", errors="replace"))))
+        await proc.wait()
+        queue.put_nowait(("done", proc.returncode))
+    except Exception as e:
+        queue.put_nowait(("error", e))
 
 def _resolve_simple_assist_client() -> llm.LLMClient:
     """Return an LLMClient configured with the active endpoint from settings,
@@ -114,7 +286,7 @@ class SimpleAssistRequest(BaseModel):
     available_files: List[Dict[str, str]] = Field(default_factory=list)
     active_filename: Optional[str] = None
     skip_planner: bool = False
-
+    harness: Optional[str] = "api" 
 
 
 @router.get("/simple/logs")
@@ -159,6 +331,7 @@ def _log_simple_assist(
     completion_tokens: int = 0,
     total_tokens: int = 0,
     thinking_output: Optional[str] = None,
+    tool_calls: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     log_entry = {
         "id": f"simple_{uuid.uuid4().hex}",
@@ -180,6 +353,8 @@ def _log_simple_assist(
     }
     if thinking_output is not None:
         log_entry["thinking_output"] = thinking_output
+    if tool_calls:
+        log_entry["tool_calls"] = tool_calls
     if edit_mode is not None:
         log_entry["edit_mode"] = edit_mode
     if planner_system_prompt is not None:
@@ -450,6 +625,119 @@ async def simple_assist(payload: SimpleAssistRequest):
             _active_stop_events[payload.session_id] = stop_event
 
         try:
+            if payload.harness and payload.harness not in ("api", "none"):
+                yield {"data": json.dumps({"status": "generating"})}
+                # Resolve the active file first: the agent needs to know WHAT
+                # to edit, not just receive loose text.
+                active_path = None
+                if payload.active_filename:
+                    active_path = next(
+                        (f.get("path") for f in (payload.available_files or [])
+                         if f.get("name") == payload.active_filename),
+                        None,
+                    )
+                    if active_path:
+                        try:
+                            storage.update_input_file(active_path, payload.content)
+                        except Exception as e:
+                            print(f"Harness pre-flush failed for {active_path}: {e}")
+                if mode == "edit" and active_path:
+                    context = (
+                        f"{payload.selected_text}\n\n---\n"
+                        if payload.selected_text else ""
+                    )
+                    harness_prompt = (
+                        f"You are editing the file {active_path} in the current working directory.\n"
+                        f"Apply the requested change directly to that file with your file-editing tools. "
+                        f"Do not just describe or print the result in your response.\n"
+                        f"Make the MINIMAL edit that satisfies the request: confine changes to the "
+                        f"selected passage or its paragraph. Do not rewrite, expand, or restyle "
+                        f"unrelated paragraphs.\n\n"
+                        f"{context}{payload.message}"
+                    )
+                else:
+                    harness_prompt = payload.message
+                    if payload.selected_text:
+                        harness_prompt = f"{payload.selected_text}\n\n---\n{harness_prompt}"
+                argv = _resolve_harness_argv(
+                    payload.harness, harness_prompt, str(storage.workspace_dir), mode=mode
+                )
+                loop = asyncio.get_running_loop()
+                hqueue: asyncio.Queue = asyncio.Queue()
+                structured = bool(HARNESS_DESCRIPTORS[payload.harness].get("structured"))
+                loop.create_task(run_harness(argv, str(storage.workspace_dir), stop_event, hqueue))
+                full_harness_output = ""
+                full_harness_thinking = ""
+                harness_returncode = 0
+                tool_calls: list = []
+                usage_prompt = 0
+                usage_completion = 0
+                line_buf = ""
+                # Opencode emits JSON-lines; other harnesses stream raw text.
+                # Chunk boundaries don't align with lines, so buffer until \n.
+                while True:
+                    msg_type, val = await hqueue.get()
+                    if msg_type == "chunk":
+                        if not structured:
+                            full_harness_output += _strip_ansi(val)
+                            yield {"data": json.dumps({"status": "chunk", "chunk": _strip_ansi(val)})}
+                        else:
+                            line_buf += val
+                            *complete, line_buf = line_buf.split("\n")
+                            for line in complete:
+                                for qtype, qval in _parse_opencode_line(line):
+                                    if qtype == "chunk":
+                                        full_harness_output += qval
+                                        yield {"data": json.dumps({"status": "chunk", "chunk": qval})}
+                                    elif qtype == "thinking":
+                                        full_harness_thinking += qval
+                                        yield {"data": json.dumps({"status": "thinking_chunk", "chunk": qval})}
+                                    elif qtype == "tool":
+                                        tool_calls.append(qval)
+                                        yield {"data": json.dumps({"status": "tool", "tool": qval["tool"], "detail": qval["detail"]})}
+                                    elif qtype == "usage":
+                                        usage_prompt += qval.get("prompt_tokens", 0)
+                                        usage_completion += qval.get("completion_tokens", 0)
+                    elif msg_type == "done":
+                        harness_returncode = val if isinstance(val, int) else 0
+                        break
+                    elif msg_type == "error":
+                        raise val
+                if harness_returncode != 0:
+                    raise RuntimeError(
+                        f"{HARNESS_DESCRIPTORS[payload.harness]['name']} exited with code {harness_returncode}"
+                    )
+                s = storage.get_settings()
+                harness_model = ((s.get("harnesses") or {}).get(payload.harness) or {}).get("model")
+                harness_agent = (HARNESS_DESCRIPTORS[payload.harness].get("mode_agents") or {}).get(mode)
+                await loop.run_in_executor(
+                    None,
+                    lambda: _log_simple_assist(
+                        mode="chat" if mode == "chat" else "edit_write",
+                        session_id=payload.session_id,
+                        system_prompt=(
+                            f"Harness: {payload.harness}"
+                            f" | model: {harness_model or 'default'}"
+                            + (f" | agent: {harness_agent}" if harness_agent else "")
+                            + f" | argv: {' '.join(a if len(a) < 60 else a[:60] + '…' for a in argv)}"
+                        ),
+                        user_prompt=harness_prompt,
+                        response=full_harness_output,
+                        instruction=payload.message,
+                        selected_text=payload.selected_text,
+                        ref_files=payload.ref_files,
+                        success=True,
+                        model_used=f"{payload.harness}:{harness_model or 'default'}",
+                        prompt_tokens=usage_prompt,
+                        completion_tokens=usage_completion,
+                        total_tokens=usage_prompt + usage_completion,
+                        thinking_output=full_harness_thinking or None,
+                        tool_calls=tool_calls or None,
+                    )
+                )
+                yield {"data": json.dumps({"status": "harness_done", "harness": payload.harness})}
+                return
+
             if mode == "edit":
                 if not payload.skip_planner:
                     yield {"data": json.dumps({"status": "planning"})}

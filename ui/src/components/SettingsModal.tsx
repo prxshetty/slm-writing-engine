@@ -87,7 +87,7 @@ const textStyles: { id: TextStyle; name: string; description: string; sample: st
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const { settings, updateSettings } = useSettingsStore()
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'context' | 'endpoints'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'context' | 'endpoints' | 'harnesses'>('general')
   const [availableFiles, setAvailableFiles] = useState<{ name: string; path: string }[]>([])
 
   useEffect(() => {
@@ -117,6 +117,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             <TabButton active={activeTab === 'appearance'} onClick={() => setActiveTab('appearance')} label="Appearance" />
             <TabButton active={activeTab === 'context'} onClick={() => setActiveTab('context')} label="Context" />
             <TabButton active={activeTab === 'endpoints'} onClick={() => setActiveTab('endpoints')} label="Endpoints" />
+            <TabButton active={activeTab === 'harnesses'} onClick={() => setActiveTab('harnesses')} label="Harnesses" />
           </div>
 
           {/* Content Area */}
@@ -125,6 +126,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             {activeTab === 'appearance' && <AppearanceSettings settings={settings} updateSettings={updateSettings} />}
             {activeTab === 'context' && <ContextSettings settings={settings} updateSettings={updateSettings} availableFiles={availableFiles} />}
             {activeTab === 'endpoints' && <EndpointsSettings settings={settings} updateSettings={updateSettings} />}
+            {activeTab === 'harnesses' && <HarnessesSettings settings={settings} updateSettings={updateSettings} />}
           </div>
         </div>
       </div>
@@ -942,5 +944,159 @@ function EndpointsSettings({ settings, updateSettings }: { settings: AppSettings
         </div>
       </section>
     </div>
+  )
+}
+
+function HarnessesSettings({ settings, updateSettings }: { settings: AppSettings, updateSettings: (u: Partial<AppSettings>) => void }) {
+  const [discovered, setDiscovered] = useState<{ id: string; name: string; installed: boolean; version: string | null }[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/harnesses`)
+      .then(res => res.ok ? res.json() : { harnesses: [] })
+      .then(data => setDiscovered(data.harnesses || []))
+      .catch(err => console.error(err))
+      .finally(() => setIsLoading(false))
+  }, [])
+
+  const selected = settings.default_harness || 'none'
+
+  const setExecutable = (id: string, executable: string) => {
+    updateSettings({ harnesses: { ...(settings.harnesses || {}), [id]: { ...(settings.harnesses?.[id] || {}), executable } } })
+  }
+
+  const setModel = (id: string, model: string) => {
+    updateSettings({ harnesses: { ...(settings.harnesses || {}), [id]: { ...(settings.harnesses?.[id] || {}), model } } })
+  }
+
+  return (
+    <div className="flex flex-col gap-8">
+      <section>
+        <h3 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Default Harness</h3>
+        <p className="text-[12px] text-[var(--text-secondary)] mb-3">
+          External agent runtimes (Claude Code, Codex, ...) run locally with your own subscription.
+          Select None to use the configured endpoint instead. Authenticate each CLI in your own terminal.
+        </p>
+
+        <div className="flex flex-col gap-2">
+          <label className={`flex items-center gap-3 p-3 cursor-pointer border rounded-[6px] transition-colors ${selected === 'none' ? 'border-[var(--text-secondary)] bg-[var(--bg-hover)]' : 'border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]'}`}>
+            <input
+              type="radio"
+              name="default_harness"
+              checked={selected === 'none'}
+              onChange={() => updateSettings({ default_harness: 'none' })}
+              className="accent-[var(--accent-brown)]"
+            />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[13px] font-medium text-[var(--text-heading)]">None — use endpoint</span>
+              <span className="text-[11px] text-[var(--text-secondary)]">Default. No local agent involved.</span>
+            </div>
+          </label>
+
+          {isLoading && (
+            <p className="text-[12px] text-[var(--text-muted)] p-2">Detecting installed harnesses...</p>
+          )}
+
+          {discovered.map(h => (
+            <div key={h.id} className={`flex flex-col border rounded-[6px] transition-colors ${selected === h.id ? 'border-[var(--text-secondary)] bg-[var(--bg-hover)]' : 'border-[var(--border-subtle)]'}`}>
+              <label className="flex items-center gap-3 p-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="default_harness"
+                  checked={selected === h.id}
+                  onChange={() => updateSettings({ default_harness: h.id })}
+                  className="accent-[var(--accent-brown)]"
+                />
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-[13px] font-medium text-[var(--text-heading)]">{h.name}</span>
+                  <span className="text-[11px] text-[var(--text-secondary)]">
+                    {h.installed ? `✓ Installed${h.version ? ` · ${h.version}` : ''}` : '✕ Not installed — install and authenticate its CLI, then reopen Settings'}
+                  </span>
+                </div>
+              </label>
+              <div className="px-3 pb-3 flex items-center gap-2">
+                <span className="text-[11px] text-[var(--text-muted)] shrink-0">Custom executable:</span>
+                <input
+                  type="text"
+                  placeholder={`e.g. /opt/homebrew/bin/${h.id}`}
+                  value={(settings.harnesses?.[h.id]?.executable) || ''}
+                  onChange={(e) => setExecutable(h.id, e.target.value)}
+                  className="flex-1 min-w-0 border border-[var(--border-subtle)] rounded-[4px] px-2.5 py-1 text-[11px] bg-[var(--bg-input)] text-[var(--text)] outline-none focus:border-[var(--text-secondary)] font-mono"
+                />
+              </div>
+              <div className="px-3 pb-3 flex items-center gap-2">
+                <span className="text-[11px] text-[var(--text-muted)] shrink-0">Default model:</span>
+                <HarnessModelPicker
+                  key={`${h.id}:${settings.harnesses?.[h.id]?.executable || ''}`}
+                  harnessId={h.id}
+                  value={settings.harnesses?.[h.id]?.model || ''}
+                  onChange={(model) => setModel(h.id, model)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function HarnessModelPicker({ harnessId, value, onChange }: { harnessId: string; value: string; onChange: (model: string) => void }) {
+  const [models, setModels] = useState<{ id: string; name: string }[]>([])
+  const [manual, setManual] = useState(true)
+  const [isLoading, setIsLoading] = useState(true)
+  const [customMode, setCustomMode] = useState(false)
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/harnesses/${harnessId}/models`)
+      .then(res => res.ok ? res.json() : { models: [], manual: true })
+      .then(data => {
+        setModels(data.models || [])
+        setManual(data.manual !== false || (data.models || []).length === 0)
+        if (value && !(data.models || []).some((m: { id: string }) => m.id === value)) {
+          setCustomMode(true)
+        }
+      })
+      .catch(err => console.error(err))
+      .finally(() => setIsLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [harnessId])
+
+  if (isLoading) {
+    return <span className="text-[11px] text-[var(--text-muted)]">Loading models...</span>
+  }
+
+  if (manual || models.length === 0 || customMode) {
+    return (
+      <input
+        type="text"
+        placeholder="e.g. anthropic/claude-sonnet-4-5 (empty = harness default)"
+        value={customMode ? value : (manual || models.length === 0 ? value : '')}
+        onChange={(e) => { setCustomMode(true); onChange(e.target.value) }}
+        className="flex-1 min-w-0 border border-[var(--border-subtle)] rounded-[4px] px-2.5 py-1 text-[11px] bg-[var(--bg-input)] text-[var(--text)] outline-none focus:border-[var(--text-secondary)] font-mono"
+      />
+    )
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === '__custom__') {
+          setCustomMode(true)
+        } else {
+          onChange(e.target.value)
+        }
+      }}
+      className="flex-1 min-w-0 border border-[var(--border-subtle)] rounded-[4px] px-2.5 py-1 text-[11px] bg-[var(--bg-input)] text-[var(--text)] outline-none focus:border-[var(--text-secondary)] font-mono"
+    >
+      <option value="">Harness default</option>
+      {models.map(m => (
+        <option key={m.id} value={m.id} title={m.name}>
+          {m.id}{m.name !== m.id ? ` — ${m.name}` : ''}
+        </option>
+      ))}
+      <option value="__custom__">Custom...</option>
+    </select>
   )
 }

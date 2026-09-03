@@ -105,6 +105,13 @@ export const AiDiffHighlightExtension = Extension.create<AiDiffHighlightOptions>
                   widget.querySelector('.accept-btn')?.addEventListener('click', (e) => {
                     e.preventDefault()
                     const state = useEditorStore.getState()
+                    if (state.aiPendingEdit?.harness) {
+                      // Harness run: persist merged doc (AI + preserved user edits)
+                      import('../../lib/applyHarnessResult').then(({ resolveHarnessReview }) => {
+                        resolveHarnessReview(true).catch((err) => console.error('Failed to accept harness changes:', err))
+                      })
+                      return
+                    }
                     state.editor?.commands.clearAiHighlight()
                     state.setAiPendingEdit(null)
                   })
@@ -112,6 +119,13 @@ export const AiDiffHighlightExtension = Extension.create<AiDiffHighlightOptions>
                   widget.querySelector('.reject-btn')?.addEventListener('click', (e) => {
                     e.preventDefault()
                     const state = useEditorStore.getState()
+                    if (state.aiPendingEdit?.harness) {
+                      // Harness run: remove AI changes, keep user changes (incl. disk)
+                      import('../../lib/applyHarnessResult').then(({ resolveHarnessReview }) => {
+                        resolveHarnessReview(false).catch((err) => console.error('Failed to reject harness changes:', err))
+                      })
+                      return
+                    }
                     const previous = state.aiPendingEdit?.previousContent
                     state.editor?.commands.clearAiHighlight()
                     if (previous !== undefined) {

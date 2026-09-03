@@ -4,6 +4,7 @@ import { useEditorStore } from '../stores/editorStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { API_BASE } from '../lib/api'
 import { streamSSE } from '../lib/stream-sse'
+import { applyHarnessResult } from '../lib/applyHarnessResult'
 import type { FileEntry } from '../stores/editorStore'
 
 interface SimpleLogEntry {
@@ -27,6 +28,7 @@ interface SimpleLogEntry {
   prompt_tokens?: number
   completion_tokens?: number
   total_tokens?: number
+  tool_calls?: Array<{ tool: string; detail: string }>
 }
 
 
@@ -424,6 +426,13 @@ export function SimpleAssist() {
   const [showHistoryDropdown, setShowHistoryDropdown] = useState(false)
   const [sessionLoadCount, setSessionLoadCount] = useState(3)
   const [mode, setMode] = useState<'chat' | 'edit'>('edit')
+  const [harness, setHarness] = useState('none')
+  const [activeHarness, setActiveHarness] = useState('none')
+  const [harnessList, setHarnessList] = useState<Array<{ id: string; name: string; installed: boolean; version: string | null }>>([])
+  const [noticeText, setNoticeText] = useState('')
+  const [activeToolRows, setActiveToolRows] = useState<Array<{ tool: string; detail: string }>>([])
+  const harnessBaseRef = useRef('')
+  const harnessLabel = (id: string) => harnessList.find(h => h.id === id)?.name ?? id
   const hasSelection = !!pendingEditSelection
   const { settings, fetchSettings, setShowSettings } = useSettingsStore()
 
@@ -437,7 +446,11 @@ export function SimpleAssist() {
     if (settings?.default_mode) {
       setMode(settings.default_mode as 'chat' | 'edit')
     }
-  }, [settings?.default_mode])
+    if (settings && settings.default_harness !== undefined) {
+      setHarness(settings.default_harness || 'none')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.default_mode, settings?.default_harness])
 
   const [showFileDropdown, setShowFileDropdown] = useState(false)
   const [fileQuery, setFileQuery] = useState('')
@@ -540,6 +553,10 @@ export function SimpleAssist() {
 
   useEffect(() => {
     fetchLogs()
+    fetch(`${API_BASE}/api/harnesses`)
+      .then(res => res.ok ? res.json() : { harnesses: [] })
+      .then(data => setHarnessList(data.harnesses || []))
+      .catch(err => console.error('Failed to fetch harnesses:', err))
   }, [])
 
   // Reset all session state when the workspace directory changes
@@ -550,6 +567,9 @@ export function SimpleAssist() {
     setPlannerContextFiles([])
     setStreamingThinkingText('')
     setStreamingChatText('')
+    setActiveToolRows([])
+    setActiveHarness('none')
+    setNoticeText('')
   }, [workspaceDir])
 
   useEffect(() => {
@@ -672,12 +692,17 @@ export function SimpleAssist() {
     setPlannerContextFiles([])
     setStreamingThinkingText('')
     setStreamingChatText('')
+    setActiveToolRows([])
     setActiveInstruction(currentInstruction)
     const currentRefFiles = Array.from(new Set(refPaths))
       .map(path => openedFiles.find(f => f.path === path))
       .filter((f): f is FileEntry => !!f)
     setActiveRefFiles(currentRefFiles)
     setErrorText('')
+    setNoticeText('')
+    // Snapshot for harness three-way reconciliation (editor stays editable)
+    harnessBaseRef.current = useEditorStore.getState().content
+    setActiveHarness(harness)
 
     if (inputRef.current) {
       inputRef.current.textContent = ''
@@ -703,6 +728,7 @@ export function SimpleAssist() {
         content: content,
         message: cleanMessage,
         mode: 'edit',
+        harness: harness,
         session_id: activeSessionId,
         ref_files: currentRefFiles.map(f => ({ name: f.name, path: f.path })),
         available_files: openedFiles.map(f => ({ name: f.name, path: f.path })),
@@ -752,6 +778,10 @@ export function SimpleAssist() {
           } else if (status === 'chunk') {
             setIsPlanning(false)
             setIsGenerating(true)
+            if (harness !== 'none') {
+              // Harness stdout is progress output — display only, never insert
+              setStreamingChatText(prev => prev + (data.chunk as string))
+            } else {
             const chunk = data.chunk as string
             const liveEditor = useEditorStore.getState().editor || activeEditor
             if (liveEditor && liveEditor.view && liveEditor.state && !liveEditor.isDestroyed) {
@@ -767,6 +797,25 @@ export function SimpleAssist() {
               liveEditor.commands.setAiHighlight(startPos, currentEndPos)
               liveEditor.commands.setTextSelection(currentEndPos)
             }
+            }
+          } else if (status === 'tool') {
+            // Opencode-only: compact tool rows, display only, never insert
+            if (harness === 'opencode') {
+              setIsPlanning(false)
+              setIsGenerating(true)
+              setActiveToolRows(prev => [...prev, { tool: String(data.tool || 'tool'), detail: String(data.detail || '') }])
+            }
+          } else if (status === 'harness_done') {
+            setIsPlanning(false)
+            setIsGenerating(false)
+            applyHarnessResult(harnessBaseRef.current, harness)
+              .then(({ conflicts }) => {
+                if (conflicts > 0) {
+                  setNoticeText(`${conflicts} paragraph${conflicts > 1 ? 's were' : ' was'} changed by both you and ${harnessLabel(harness)} — kept your version.`)
+                }
+                setPendingEditSelection(null)
+              })
+              .catch((e) => setErrorText('Error: ' + (e as Error).message))
           } else if (status === 'applied') {
             if (data.model_used) {
               useEditorStore.getState().setActiveModel(data.model_used as string)
@@ -823,6 +872,7 @@ export function SimpleAssist() {
       setIsPlanning(false)
       setIsGenerating(false)
       setPlannerContextFiles([])
+      setActiveHarness('none')
       if (!wasAbortedRef.current) {
         setStreamingThinkingText('')
         setStreamingChatText('')
@@ -848,12 +898,16 @@ export function SimpleAssist() {
     setPlannerContextFiles([])
     setStreamingThinkingText('')
     setStreamingChatText('')
+    setActiveToolRows([])
     setActiveInstruction(currentInstruction)
     const currentRefFiles = Array.from(new Set(refPaths))
       .map(path => openedFiles.find(f => f.path === path))
       .filter((f): f is FileEntry => !!f)
     setActiveRefFiles(currentRefFiles)
     setErrorText('')
+    setNoticeText('')
+    harnessBaseRef.current = useEditorStore.getState().content
+    setActiveHarness(harness)
 
     if (inputRef.current) {
       inputRef.current.textContent = ''
@@ -876,6 +930,7 @@ export function SimpleAssist() {
         content: content,
         message: cleanMessage,
         mode: 'chat',
+        harness: harness,
         session_id: activeSessionId,
         ref_files: currentRefFiles.map(f => ({ name: f.name, path: f.path })),
         available_files: openedFiles.map(f => ({ name: f.name, path: f.path })),
@@ -906,10 +961,27 @@ export function SimpleAssist() {
             setIsPlanning(false)
             setIsGenerating(true)
             setStreamingChatText(prev => prev + (data.chunk as string))
+          } else if (status === 'tool') {
+            // Opencode-only: compact tool rows (other harnesses never emit this)
+            if (harness === 'opencode') {
+              setIsPlanning(false)
+              setIsGenerating(true)
+              setActiveToolRows(prev => [...prev, { tool: String(data.tool || 'tool'), detail: String(data.detail || '') }])
+            }
           } else if (status === 'chat') {
             if (data.model_used) {
               useEditorStore.getState().setActiveModel(data.model_used as string)
             }
+          } else if (status === 'harness_done') {
+            setIsPlanning(false)
+            setIsGenerating(false)
+            applyHarnessResult(harnessBaseRef.current, harness)
+              .then(({ conflicts }) => {
+                if (conflicts > 0) {
+                  setNoticeText(`${conflicts} paragraph${conflicts > 1 ? 's were' : ' was'} changed by both you and ${harnessLabel(harness)} — kept your version.`)
+                }
+              })
+              .catch((e) => setErrorText('Error: ' + (e as Error).message))
           }
         },
         abortRef.current.signal
@@ -928,6 +1000,7 @@ export function SimpleAssist() {
       setIsPlanning(false)
       setIsGenerating(false)
       setPlannerContextFiles([])
+      setActiveHarness('none')
       if (!wasAbortedRef.current) {
         setStreamingThinkingText('')
         setStreamingChatText('')
@@ -1073,7 +1146,7 @@ export function SimpleAssist() {
     }
   }, [pendingEditSelection])
 
-  const hasHistory = filteredLogs.length > 0 || isWorking || !!errorText
+  const hasHistory = filteredLogs.length > 0 || isWorking || !!errorText || !!noticeText
 
   const renderInputCard = () => (
     <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] focus-within:border-[var(--text-muted)] shadow-[0_2px_8px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] duration-200 rounded-[14px] pt-3 px-3 pb-2 flex flex-col relative animate-scale-in">
@@ -1140,6 +1213,20 @@ export function SimpleAssist() {
           >
             <PlanModeIcon />
           </button>
+          {/* Harness selector: None = configured endpoint */}
+          <select
+            value={harness}
+            onChange={(e) => setHarness(e.target.value)}
+            title="AI harness (Endpoint = use configured endpoint)"
+            className="ml-1 max-w-[92px] truncate bg-transparent text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-heading)] outline-none cursor-pointer"
+          >
+            <option value="none">Endpoint</option>
+            {harnessList.map(h => (
+              <option key={h.id} value={h.id} disabled={!h.installed}>
+                {h.name}{h.installed && h.version ? ` · ${h.version}` : h.installed ? '' : ' (missing)'}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Context Ring and Action Button Group */}
@@ -1418,6 +1505,14 @@ export function SimpleAssist() {
                                 <span>Read editor selection ({log.selected_text.length} Ch)</span>
                               </div>
                             )}
+                            {log.tool_calls?.map((t, i) => (
+                              <div key={`tool-${i}`} className="flex items-center gap-1.5 text-[10.5px] text-[var(--text-secondary)] font-sans">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                                </svg>
+                                <span>{t.tool}{t.detail ? ` ${t.detail}` : ''}</span>
+                              </div>
+                            ))}
                           </div>
                         )}
                         {log.planner_system_prompt && (
@@ -1523,14 +1618,24 @@ export function SimpleAssist() {
                     )
                   })}
 
+                {/* Harness tool calls (opencode only) */}
+                {activeToolRows.map((t, i) => (
+                  <div key={`htool-${i}`} className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)] font-sans select-none ml-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                    </svg>
+                    <span>{t.tool}{t.detail ? ` ${t.detail}` : ''}</span>
+                  </div>
+                ))}
+
                 {streamingThinkingText && (
                   <div className="self-start w-full">
                     <ThinkingDropdown text={streamingThinkingText} defaultOpen={true} />
                   </div>
                 )}
 
-                {/* Live chat stream render */}
-                {mode === 'chat' && streamingChatText && (
+                {/* Live chat stream render (also harness progress output) */}
+                {(mode === 'chat' || activeHarness !== 'none') && streamingChatText && (
                   <div className="flex flex-col gap-1.5 self-start w-full select-text max-w-full py-1 animate-scale-in">
                     <div className="text-xs font-sans leading-relaxed select-text text-[var(--text)]">
                       {renderMarkdown(streamingChatText)}
@@ -1544,7 +1649,7 @@ export function SimpleAssist() {
                     <div className={`status-indicator-inner ${isGenerating ? 'animate-orbit' : ''}`} />
                   </div>
                   <span className="animate-shimmer">
-                    {isPlanning ? 'Planning...' : isGenerating ? 'Generating...' : 'Thinking about the edit...'}
+                    {activeHarness !== 'none' && isWorking ? `${harnessLabel(activeHarness)} working…` : isPlanning ? 'Planning...' : isGenerating ? 'Generating...' : 'Thinking about the edit...'}
                   </span>
                 </div>
               </div>
@@ -1553,6 +1658,12 @@ export function SimpleAssist() {
             {errorText && (
               <div className="flex items-center gap-1.5 text-xs text-[var(--danger)] bg-[var(--danger-bg)] border border-[var(--danger-muted)] rounded-[8px] px-2.5 py-2 font-sans self-start select-none animate-fade-in" ref={outputRef}>
                 <span>{errorText}</span>
+              </div>
+            )}
+
+            {noticeText && (
+              <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[8px] px-2.5 py-2 font-sans self-start select-none animate-fade-in">
+                <span>{noticeText}</span>
               </div>
             )}
           </div>

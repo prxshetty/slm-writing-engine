@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import assist, workspace, settings
+from api.routers import assist, workspace, settings, harnesses
 
 app = FastAPI(title="SLM Writing Engine API")
 
@@ -15,6 +15,7 @@ app.add_middleware(
 app.include_router(assist.router)
 app.include_router(workspace.router)
 app.include_router(settings.router)
+app.include_router(harnesses.router)
 
 @app.get("/")
 def root():

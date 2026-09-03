@@ -2,6 +2,16 @@
 
 The AI Assist panel is your main interface for writing with AI. You can toggle between **Edit** and **Chat** modes at any time during a session.
 
+## Agent Harnesses
+
+If you have a subscription to an agentic coding tool, you can run it directly from Margin instead of using an API endpoint. Supported harnesses: **OpenCode**, **Claude Code**, **Codex**, and **Agy**.
+
+- **Setup**: install and authenticate each CLI in your own terminal first — Margin never handles harness credentials. Pick a default in **Settings > Harnesses**, or override per request with the harness dropdown in the Assist panel (the inline bubble always follows the default).
+- **How it works**: your instruction (plus any selected text) is sent to the agent, which runs in your workspace and edits files itself. Its output streams live in the panel as progress — it is never inserted into the document directly.
+- **No locking**: the editor stays editable while the agent works. Your current content is snapshotted when the run starts; when it finishes, agent changes are three-way merged (paragraph-level) with any edits you made meanwhile. Your newer work is never silently overwritten — if you both touched the same paragraph, your version is kept and you're told about the conflict.
+
+> See [Harnesses](./configuration/harnesses.md) for detection, custom executable paths, and troubleshooting.
+
 ## Edit Mode
 
 Use Edit mode when you want the AI to modify or add content. The behavior depends on whether you have text selected or just a cursor placed.
