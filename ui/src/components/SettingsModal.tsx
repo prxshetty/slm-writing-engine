@@ -268,11 +268,7 @@ function AppearanceSettings({ settings, updateSettings }: { settings: AppSetting
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Category 1: Theme & Color Palette */}
-      <div>
-        <h3 className="text-[14px] font-medium text-[var(--text-heading)] tracking-tight border-b border-[var(--border-subtle)] pb-2 mb-4">Theme & Color Palette</h3>
-        <div className="flex flex-col gap-6">
-          <section>
+      <section>
             <h4 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Mode</h4>
             <p className="text-[12px] text-[var(--text-secondary)] mb-3">Choose the interface color mode.</p>
             <div className="inline-flex rounded-[7px] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1">
@@ -328,13 +324,8 @@ function AppearanceSettings({ settings, updateSettings }: { settings: AppSetting
               })}
             </div>
           </section>
-        </div>
-      </div>
 
-      {/* Category 2: Typography */}
-      <div>
-        <h3 className="text-[14px] font-medium text-[var(--text-heading)] tracking-tight border-b border-[var(--border-subtle)] pb-2 mb-4">Typography</h3>
-        <section>
+      <section>
           <h4 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Text Style</h4>
           <p className="text-[12px] text-[var(--text-secondary)] mb-3">Change the typography and spacing of the writing surface.</p>
           <div className="grid grid-cols-2 gap-3">
@@ -365,13 +356,8 @@ function AppearanceSettings({ settings, updateSettings }: { settings: AppSetting
             })}
           </div>
         </section>
-      </div>
 
-      {/* Category 3: Layout & Details */}
-      <div>
-        <h3 className="text-[14px] font-medium text-[var(--text-heading)] tracking-tight border-b border-[var(--border-subtle)] pb-2 mb-4">Layout & Details</h3>
-        <div className="flex flex-col gap-6">
-          <section>
+      <section>
             <h4 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Editor Statistics</h4>
             <p className="text-[12px] text-[var(--text-secondary)] mb-3">Display word and/or character counts in the editor.</p>
             <select
@@ -385,8 +371,6 @@ function AppearanceSettings({ settings, updateSettings }: { settings: AppSetting
               <option value="none">None</option>
             </select>
           </section>
-        </div>
-      </div>
     </div>
   )
 }
@@ -630,6 +614,9 @@ function ContextSettings({
           )}
         </div>
       </section>
+      <p className="text-[11px] text-[var(--text-muted)] leading-relaxed -mt-4">
+        Endpoint models only — agent harnesses read your workspace files directly.
+      </p>
     </div>
   )
 }

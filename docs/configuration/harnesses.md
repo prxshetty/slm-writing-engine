@@ -1,39 +1,39 @@
 # Agent Harnesses
 
-Margin can delegate work to external agent CLIs — **OpenCode**, **Claude Code**, **Codex**, and **Agy** — so you can use your existing subscriptions instead of an API endpoint.
+If you already pay for an AI coding helper — **OpenCode**, **Claude Code**, **Codex**, or **Agy** — Margin can use it instead of an API endpoint. The helper runs on your computer, edits your files, and Margin shows you what changed.
 
-## Prerequisites
+## Before you start
 
-Install and authenticate each CLI using its own instructions, in your own terminal. Margin only shells out to the executable; it never sees or stores your harness credentials. If a run fails with an auth error, the CLI's own message is shown — re-authenticate in your terminal and retry.
+Install the helper and sign in using its own instructions, in your own terminal. Margin only starts the helper's program — it never sees or stores your sign-in. If a run fails with a sign-in error, the helper's own message is shown; sign in again in your terminal and retry.
 
-## Detection
+## Finding your helpers
 
-**Settings > Harnesses** lists each supported harness with its install status (`GET /api/harnesses`):
+**Settings > Harnesses** lists each supported helper:
 
-- `✓ Installed · <version>` — ready to use.
-- `✕ Not installed` — install and authenticate its CLI, then reopen Settings to re-detect.
+- `✓ Ready · <version>` — good to go.
+- `✕ Not installed` — install and sign in to its program, then reopen Settings and it should appear.
 
-Detection checks the server's `PATH` (extended with common Homebrew locations, since GUI-launched servers can miss them). If your CLI lives elsewhere, set a custom path (below) — detection honors it.
+If Margin can't find a helper you installed, enter its location by hand in the "Custom program" box for that helper.
 
 ## Configuration
 
-- **Default Harness**: `None — use endpoint` (default, existing behavior unchanged) or any harness. The Assist panel dropdown overrides this per request; the inline bubble always follows the default.
-- **Custom executable**: per-harness absolute path (e.g. `/opt/homebrew/bin/opencode`) for installs outside `PATH`.
+- **Default Harness**: `None — use endpoint` (the normal setting — nothing changes) or one of your helpers. You can also pick a helper per message from the dropdown in the Assist panel; the inline bubble always follows the default.
+- **Default model**: which model the helper should use. OpenCode and Agy show the list straight from the helper itself. Codex and Claude Code don't offer a list command, so Margin ships a built-in list for them[^1] — or just type any model name by hand.
+- **Custom program**: the helper's location on your computer, for installs Margin can't find on its own.
 
-These persist as `default_harness` and `harnesses: { "<id>": { "executable": "..." } }` in settings.
+[^1]: The built-in lists for Codex and Claude Code are updated with Margin releases. If a brand-new model is missing, type its name by hand.
 
-## Behavior
+## While it works
 
-- The editor is snapshotted and flushed to disk when a run starts; the agent operates on fresh file state.
-- Agent stdout streams as progress text. The editor remains editable throughout.
-- On completion, agent changes are paragraph-level three-way merged against your snapshot and current edits. Same-paragraph conflicts keep your version and are reported.
-- Accept persists the merged document; Reject restores your content (removing agent changes) on disk as well.
+- You can keep writing — the editor never locks.
+- The helper's progress appears in the panel as it works.
+- When it finishes, its changes are highlighted in your document. Conflicts (you edited the same paragraph) keep your version and are flagged.
+- **Accept** keeps the merged result; **Reject** removes the helper's changes but preserves yours.
 
-## Troubleshooting
+## If something goes wrong
 
-| Symptom | Cause / fix |
+| What you see | What to do |
 |---|---|
-| `<Name> not found` error | CLI not on server `PATH` — install it or set a custom executable path, then reopen Settings. |
-| Auth / login errors in output | Authenticate the CLI in your terminal (`<cli> login` or equivalent) and retry. |
-| Agent edited other files | Only the open file is merged/highlighted; other workspace files update on sidebar refresh. |
-| Highlight spans unchanged text | Highlighting is paragraph-oriented (min–max range over AI-changed paragraphs) — expected for v1. |
+| `<Name> not found` | Install the helper's program, or enter its location in Settings > Harnesses. |
+| Sign-in / login errors | Sign in to the helper in your terminal and retry. |
+| The helper changed other files | Only the open file is merged and highlighted; other files update when you revisit them. |

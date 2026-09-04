@@ -12,7 +12,7 @@ from fastapi import APIRouter
 
 from api.services.file_storage import storage
 from api.services import harness_env
-from api.routers.assist import HARNESS_DESCRIPTORS
+from api.services.harness_registry import HARNESS_DESCRIPTORS
 
 router = APIRouter(prefix="/api/harnesses", tags=["harnesses"])
 

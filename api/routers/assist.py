@@ -17,63 +17,9 @@ import llm
 import config
 from api.services import context_injector
 from api.services import harness_env
+from api.services.harness_registry import HARNESS_DESCRIPTORS
 
 router = APIRouter(prefix="/api/assist", tags=["assist"])
-
-HARNESS_DESCRIPTORS = {
-    "opencode": {
-        "name": "OpenCode",
-        "command": "opencode",
-        "version_args": ["--version"],
-        "models_args": ["models"],
-        "subcommand": "run",
-        # --dir pins the project root: `run` otherwise resolves it
-        # itself (and created files outside the workspace).
-        "workspace_flag": "--dir",
-        "model_flag": "-m",
-        # Margin chat → plan (read-only), Margin edit → build (edits files).
-        "agent_flag": "--agent",
-        "mode_agents": {"chat": "plan", "edit": "build"},
-        # Structured stdout: `run --format json` emits raw JSON events
-        # (text/reasoning/tool_use/step_finish). Opencode-only.
-        "structured": True,
-    },
-    "claude-code": {
-        "name": "Claude Code",
-        "command": "claude",
-        "version_args": ["--version"],
-        "models_args": [],
-        "static_models": [
-            "claude-fable-5-1",
-            "claude-opus-5",
-            "claude-sonnet-5",
-            "claude-haiku-4-5-20251001",
-        ],
-        "prompt_flag": "-p",
-        "model_flag": "--model",
-    },
-    "codex": {
-        "name": "Codex",
-        "command": "codex",
-        "version_args": ["--version"],
-        "models_args": [],
-        "subcommand": "exec",
-        "workspace_flag": "-C",
-        "model_flag": "-m",
-    },
-    "agy": {
-        "name": "Agy",
-        "command": "agy",
-        "version_args": ["--version"],
-        "models_args": ["models"],
-        "workspace_flag": "--add-dir",
-        "prompt_flag": "--print",
-        "model_flag": "--model",
-        # Headless print mode auto-denies permission prompts; accept-edits
-        # pre-approves file edits (review still happens in Margin's diff UI).
-        "extra_args": ["--mode", "accept-edits"],
-    },
-}
 
 
 def _resolve_harness_argv(harness_id: str, prompt: str, cwd: str, mode: str = "edit") -> list:
@@ -166,6 +112,42 @@ def _parse_opencode_line(line: str):
             "completion_tokens": toks.get("output", 0),
         })]
     return []
+
+
+def _build_harness_prompt(
+    mode: str,
+    message: str,
+    active_path: Optional[str] = None,
+    selected_text: Optional[str] = None,
+    ref_names: Optional[List[str]] = None,
+) -> str:
+    """Assemble the harness prompt in labeled sections.
+
+    Margin directive (role + target file + scope policy) → context
+    (verbatim selection, related files) → user instruction verbatim last,
+    so the user's words have the final say. Agents can read workspace
+    files themselves, so related files are named, not inlined.
+    """
+    if mode == "edit" and active_path:
+        lines = [
+            "--- MARGIN DIRECTIVE ---",
+            f"You are revising prose in the file {active_path} in the current working directory.",
+            "Apply the requested change directly to that file with your file-editing tools. "
+            "Do not just describe or print the result in your response.",
+            "Margin editing policy: make the MINIMAL edit that satisfies the request — "
+            "confine changes to the selected passage or its paragraph. Do not rewrite, "
+            "expand, or restyle unrelated paragraphs.",
+        ]
+        if ref_names:
+            lines.append(f"You may also read these related files: {', '.join(ref_names)}.")
+        if selected_text:
+            lines += ["", "--- SELECTED PASSAGE ---", selected_text]
+        lines += ["", "--- USER REQUEST ---", message]
+        return "\n".join(lines)
+    parts = [message]
+    if selected_text:
+        parts.append(f"---\n{selected_text}")
+    return "\n\n".join(parts)
 
 
 async def run_harness(argv: list, cwd: str, stop_event: threading.Event, queue: asyncio.Queue):
@@ -641,24 +623,14 @@ async def simple_assist(payload: SimpleAssistRequest):
                             storage.update_input_file(active_path, payload.content)
                         except Exception as e:
                             print(f"Harness pre-flush failed for {active_path}: {e}")
-                if mode == "edit" and active_path:
-                    context = (
-                        f"{payload.selected_text}\n\n---\n"
-                        if payload.selected_text else ""
-                    )
-                    harness_prompt = (
-                        f"You are editing the file {active_path} in the current working directory.\n"
-                        f"Apply the requested change directly to that file with your file-editing tools. "
-                        f"Do not just describe or print the result in your response.\n"
-                        f"Make the MINIMAL edit that satisfies the request: confine changes to the "
-                        f"selected passage or its paragraph. Do not rewrite, expand, or restyle "
-                        f"unrelated paragraphs.\n\n"
-                        f"{context}{payload.message}"
-                    )
-                else:
-                    harness_prompt = payload.message
-                    if payload.selected_text:
-                        harness_prompt = f"{payload.selected_text}\n\n---\n{harness_prompt}"
+                ref_names = [f.get("name") for f in (payload.ref_files or []) if f.get("name")]
+                harness_prompt = _build_harness_prompt(
+                    mode,
+                    payload.message,
+                    active_path=active_path,
+                    selected_text=payload.selected_text,
+                    ref_names=ref_names or None,
+                )
                 argv = _resolve_harness_argv(
                     payload.harness, harness_prompt, str(storage.workspace_dir), mode=mode
                 )

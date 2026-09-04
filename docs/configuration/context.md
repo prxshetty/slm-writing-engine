@@ -2,6 +2,8 @@
 
 Context settings control what information the AI receives about your project. This is the most important section -- getting context right is the key to useful AI assistance.
 
+> These settings apply to endpoint models only. Agent harnesses read your workspace files directly — see [Harnesses](./harnesses.md).
+
 ## Session Memory
 
 margin remembers your recent conversation turns (questions and AI responses) to keep the discussion coherent.
