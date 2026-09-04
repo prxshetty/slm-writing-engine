@@ -74,7 +74,7 @@ HARNESS_DESCRIPTORS: Dict[str, HarnessDescriptor] = {
         "model_flag": "-m",
     },
     "agy": {
-        "name": "Agy",
+        "name": "Antigravity",
         "command": "agy",
         "version_args": ["--version"],
         "models_args": ["models"],

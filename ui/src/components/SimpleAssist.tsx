@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { AtSign, Code2, MousePointer2, Settings, Trash2 } from 'lucide-react'
+import { AtSign, ChevronDown, Code2, MousePointer2, Settings, Trash2 } from 'lucide-react'
 import { useEditorStore } from '../stores/editorStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { API_BASE } from '../lib/api'
 import { streamSSE } from '../lib/stream-sse'
 import { applyHarnessResult } from '../lib/applyHarnessResult'
+import { HarnessIcon } from './HarnessIcon'
 import type { FileEntry } from '../stores/editorStore'
 
 interface SimpleLogEntry {
@@ -166,6 +167,26 @@ function PlanModeIcon() {
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path fill="currentColor" d="M2 2h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm4.655 8.595a.75.75 0 0 1 0 1.06L4.03 14.28a.75.75 0 0 1-1.06 0l-1.5-1.5a.749.749 0 0 1 .326-1.275a.749.749 0 0 1 .734.215l.97.97l2.095-2.095a.75.75 0 0 1 1.06 0ZM9.75 2.5h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1 0-1.5Zm0 5h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1 0-1.5Zm0 5h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1 0-1.5Zm-7.25-9v3h3v-3Z" />
     </svg>
+  )
+}
+
+function HarnessOption({ id, label, hint, disabled, selected, onSelect }: {
+  id: string; label: string; hint?: string; disabled?: boolean; selected: boolean; onSelect: () => void
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      disabled={disabled}
+      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${disabled
+        ? 'opacity-40 cursor-default'
+        : 'cursor-pointer hover:bg-[var(--bg-hover)]'
+        } ${selected ? 'text-[var(--text-heading)]' : 'text-[var(--text-secondary)]'}`}
+    >
+      <HarnessIcon id={id} className="w-3.5 h-3.5" />
+      <span className="text-[11px] truncate flex-1">{label}</span>
+      {hint && <span className="text-[9px] text-[var(--text-muted)] shrink-0">{hint}</span>}
+      {selected && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-brown)] shrink-0" />}
+    </button>
   )
 }
 
@@ -430,6 +451,8 @@ export function SimpleAssist() {
   const [activeHarness, setActiveHarness] = useState('none')
   const [harnessList, setHarnessList] = useState<Array<{ id: string; name: string; installed: boolean; version: string | null }>>([])
   const [noticeText, setNoticeText] = useState('')
+  const [showHarnessDropdown, setShowHarnessDropdown] = useState(false)
+  const harnessDropdownRef = useRef<HTMLDivElement>(null)
   const [activeToolRows, setActiveToolRows] = useState<Array<{ tool: string; detail: string }>>([])
   const harnessBaseRef = useRef('')
   const harnessLabel = (id: string) => harnessList.find(h => h.id === id)?.name ?? id
@@ -578,18 +601,21 @@ export function SimpleAssist() {
     }
   }, [historyLogs.length, isWorking, errorText])
 
-  // Close dropdown on click outside
+  // Close dropdowns on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowFileDropdown(false)
       }
+      if (harnessDropdownRef.current && !harnessDropdownRef.current.contains(e.target as Node)) {
+        setShowHarnessDropdown(false)
+      }
     }
-    if (showFileDropdown) {
+    if (showFileDropdown || showHarnessDropdown) {
       document.addEventListener('mousedown', handleClickOutside)
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showFileDropdown])
+  }, [showFileDropdown, showHarnessDropdown])
 
 
 
@@ -1213,20 +1239,39 @@ export function SimpleAssist() {
           >
             <PlanModeIcon />
           </button>
-          {/* Harness selector: None = configured endpoint */}
-          <select
-            value={harness}
-            onChange={(e) => setHarness(e.target.value)}
-            title="AI harness (Endpoint = use configured endpoint)"
-            className="ml-1 max-w-[92px] truncate bg-transparent text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-heading)] outline-none cursor-pointer"
-          >
-            <option value="none">Endpoint</option>
-            {harnessList.map(h => (
-              <option key={h.id} value={h.id} disabled={!h.installed}>
-                {h.name}{h.installed && h.version ? ` · ${h.version}` : h.installed ? '' : ' (missing)'}
-              </option>
-            ))}
-          </select>
+          {/* Harness selector: icon + name, None = configured endpoint */}
+          <div className="relative" ref={harnessDropdownRef}>
+            <button
+              onClick={() => setShowHarnessDropdown(v => !v)}
+              title="AI harness (Endpoint = use configured endpoint)"
+              className="ml-1 flex items-center gap-1 max-w-[110px] text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-heading)] transition-colors cursor-pointer"
+            >
+              <HarnessIcon id={harness} className="w-3 h-3" />
+              <span className="truncate">{harness === 'none' ? 'Endpoint' : harnessLabel(harness)}</span>
+              <ChevronDown className={`w-2.5 h-2.5 opacity-60 shrink-0 transition-transform duration-150 ${showHarnessDropdown ? 'rotate-180' : ''}`} />
+            </button>
+            {showHarnessDropdown && (
+              <div className="absolute left-0 bottom-full mb-1 z-50 min-w-[140px] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[8px] overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.06)] py-1">
+                <HarnessOption
+                  id="none"
+                  label="Endpoint"
+                  selected={harness === 'none'}
+                  onSelect={() => { setHarness('none'); setShowHarnessDropdown(false) }}
+                />
+                {harnessList.map(h => (
+                  <HarnessOption
+                    key={h.id}
+                    id={h.id}
+                    label={h.name}
+                    disabled={!h.installed}
+                    hint={h.installed ? undefined : 'not installed'}
+                    selected={harness === h.id}
+                    onSelect={() => { setHarness(h.id); setShowHarnessDropdown(false) }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Context Ring and Action Button Group */}

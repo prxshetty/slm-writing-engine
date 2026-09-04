@@ -1,6 +1,6 @@
 # Agent Harnesses
 
-If you already pay for an AI coding helper — **OpenCode**, **Claude Code**, **Codex**, or **Agy** — Margin can use it instead of an API endpoint. The helper runs on your computer, edits your files, and Margin shows you what changed.
+If you already pay for an AI coding helper — **OpenCode**, **Claude Code**, **Codex**, or **Antigravity** — Margin can use it instead of an API endpoint. The helper runs on your computer, edits your files, and Margin shows you what changed.
 
 ## Before you start
 
@@ -18,7 +18,7 @@ If Margin can't find a helper you installed, enter its location by hand in the "
 ## Configuration
 
 - **Default Harness**: `None — use endpoint` (the normal setting — nothing changes) or one of your helpers. You can also pick a helper per message from the dropdown in the Assist panel; the inline bubble always follows the default.
-- **Default model**: which model the helper should use. OpenCode and Agy show the list straight from the helper itself. Codex and Claude Code don't offer a list command, so Margin ships a built-in list for them[^1] — or just type any model name by hand.
+- **Default model**: which model the helper should use. OpenCode and Antigravity show the list straight from the helper itself. Codex and Claude Code don't offer a list command, so Margin ships a built-in list for them[^1] — or just type any model name by hand.
 - **Custom program**: the helper's location on your computer, for installs Margin can't find on its own.
 
 [^1]: The built-in lists for Codex and Claude Code are updated with Margin releases. If a brand-new model is missing, type its name by hand.

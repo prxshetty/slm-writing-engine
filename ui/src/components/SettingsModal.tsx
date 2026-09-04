@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useEditorStore } from '../stores/editorStore'
 import type { AppSettings } from '../stores/settingsStore'
 import { API_BASE } from '../lib/api'
+import { HarnessIcon } from './HarnessIcon'
 
 interface SettingsModalProps {
   onClose: () => void
@@ -995,9 +996,12 @@ function HarnessesSettings({ settings, updateSettings }: { settings: AppSettings
                   className="accent-[var(--accent-brown)]"
                 />
                 <div className="flex flex-col min-w-0 flex-1">
-                  <span className="text-[13px] font-medium text-[var(--text-heading)]">{h.name}</span>
+                  <span className="text-[13px] font-medium text-[var(--text-heading)] flex items-center gap-2">
+                    <HarnessIcon id={h.id} className="w-4 h-4" />
+                    {h.name}
+                  </span>
                   <span className="text-[11px] text-[var(--text-secondary)]">
-                    {h.installed ? `✓ Installed${h.version ? ` · ${h.version}` : ''}` : '✕ Not installed — install and authenticate its CLI, then reopen Settings'}
+                    {h.installed ? '✓ Ready' : '✕ Not installed — install and authenticate its CLI, then reopen Settings'}
                   </span>
                 </div>
               </label>
