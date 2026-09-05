@@ -271,6 +271,55 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ── FAQ Accordion (single-open) ──
+document.addEventListener('DOMContentLoaded', () => {
+  const items = document.querySelectorAll('.faq-item');
+  if (!items.length) return;
+
+  const setPanel = (item, open) => {
+    const panel = item.querySelector('.faq-panel');
+    const btn = item.querySelector('.faq-toggle');
+    item.classList.toggle('open', open);
+    if (btn) btn.setAttribute('aria-expanded', String(open));
+    if (panel) panel.style.maxHeight = open ? panel.scrollHeight + 'px' : '0px';
+  };
+
+  items.forEach(item => {
+    setPanel(item, item.classList.contains('open'));
+    const btn = item.querySelector('.faq-toggle');
+    if (btn) btn.addEventListener('click', () => {
+      const willOpen = !item.classList.contains('open');
+      items.forEach(i => setPanel(i, false));
+      setPanel(item, willOpen);
+    });
+  });
+
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.faq-item.open .faq-panel').forEach(p => {
+      p.style.maxHeight = p.scrollHeight + 'px';
+    });
+  });
+});
+
+// ── GSAP scroll motion (progressive enhancement; page works without it) ──
+document.addEventListener('DOMContentLoaded', () => {
+  if (!window.gsap || !window.ScrollTrigger) return;
+  gsap.registerPlugin(ScrollTrigger);
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  gsap.from('.install-step', {
+    y: 28, opacity: 0, duration: 0.7, ease: 'power3.out', stagger: 0.12,
+    scrollTrigger: { trigger: '.install-steps', start: 'top 88%', once: true }
+  });
+  gsap.from('.faq-item', {
+    y: 20, opacity: 0, duration: 0.6, ease: 'power3.out', stagger: 0.08,
+    scrollTrigger: { trigger: '.faq-list', start: 'top 90%', once: true }
+  });
+  gsap.to('.install-ambient', {
+    yPercent: 12, ease: 'none',
+    scrollTrigger: { trigger: '.install-section', start: 'top bottom', end: 'bottom top', scrub: true }
+  });
+});
 // ── Favicon Dynamic Inversion (Light/Dark mode tabs) ──
 document.addEventListener('DOMContentLoaded', () => {
   const favicon = document.querySelector('link[rel="icon"]');
