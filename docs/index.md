@@ -10,7 +10,7 @@ Instead of treating AI as a chat window, Margin integrates it directly into the 
 
 - **Markdown-Native Writing Environment** -- A distraction-free editor designed for long-form writing projects and documentation.
 - **Runs Locally** -- Your manuscripts, notes, and context stay on your machine. No required cloud services or telemetry.
-- **Optimized for Local Models** -- Works well with lightweight language models and supports Ollama, LM Studio, and OpenAI-compatible providers.
+- **Optimized for Local Models** -- Works well with lightweight language models and supports Ollama, LM Studio, and OpenAI-compatible providers. Or bring your OpenCode, Claude Code, Codex, or Antigravity subscription.
 - **Automatic Context Management** -- Organize characters, lore, outlines, and style guides into folders. Margin automatically includes the relevant context for each task.
 - **Customizable AI Workflows** -- Configure prompts, agents, and writing pipelines to match your process instead of adapting to rigid presets.
 - **Interactive Diff Review** -- Review AI-generated edits with clear inline diffs before accepting or rejecting changes.

@@ -782,10 +782,10 @@ body {
 
 /* Show scrollbar when active scrolling is detected */
 .is-scrolling::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--accent-brown) 35%, transparent) !important;
+  background: color-mix(in srgb, var(--text-muted) 30%, transparent) !important;
 }
 .is-scrolling {
-  scrollbar-color: color-mix(in srgb, var(--accent-brown) 35%, transparent) transparent !important;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 30%, transparent) transparent !important;
 }
 
 /* Shorten the scrollbar track for the floating editor card to fit elegantly inside */
@@ -793,6 +793,22 @@ body {
   margin-top: 32px;
   margin-bottom: 32px;
   background: transparent;
+}
+
+/* Editor: keep scrollbar hidden on hover, show only while scrolling */
+.editor-scroll-container::-webkit-scrollbar-thumb,
+.editor-scroll-container:hover::-webkit-scrollbar-thumb {
+  background: transparent !important;
+}
+.editor-scroll-container,
+.editor-scroll-container:hover {
+  scrollbar-color: transparent transparent !important;
+}
+.editor-scroll-container.is-scrolling::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 30%, transparent) !important;
+}
+.editor-scroll-container.is-scrolling {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 30%, transparent) transparent !important;
 }
 
 @keyframes slideInRight {

@@ -2,6 +2,8 @@
 
 Endpoints connect margin to an AI model. You can use local models (completely private, offline) or cloud APIs.
 
+> Prefer your agent subscription over an API key? See [Harnesses](./harnesses.md) — you can use OpenCode, Claude Code, Codex, or Antigravity instead.
+
 ## Active Endpoint
 
 Select which endpoint margin should use for AI requests:

@@ -308,18 +308,6 @@ export function WritingBubbleMenu() {
             ) : (
                 // ── Rewrite input state (morphed) ──────────────────────────────
                 <>
-                    {/* Back arrow */}
-                    <button
-                        onMouseDown={(e) => { e.preventDefault(); handleCancel() }}
-                        disabled={isStreaming}
-                        title="Cancel"
-                        className="flex items-center justify-center w-6 h-6 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] rounded-[5px] transition-colors cursor-pointer shrink-0 disabled:opacity-40"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M19 12H5M12 5l-7 7 7 7" />
-                        </svg>
-                    </button>
-
                     {/* Instruction input */}
                     <input
                         ref={inputRef}

@@ -68,7 +68,6 @@ class FileStorageService:
             "is_thinking": True,
             "prepend_thinking_preamble": False,
             "dialogue_density": 0.5,
-            "additional_context": "",
             "default_mode": "edit",
             "default_verbosity": "balanced",
             "show_thinking_by_default": False,

@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { API_BASE } from '../lib/api'
 
 export interface AppSettings {
-  additional_context: string
   default_mode: string
   default_verbosity: string
   show_thinking_by_default: boolean
@@ -19,7 +18,7 @@ export interface AppSettings {
   default_context_window?: number
   active_endpoint: string | null
   default_harness?: string
-  harnesses?: Record<string, { executable?: string; model?: string }>
+  harnesses?: Record<string, { executable?: string; model?: string; context_window?: number }>
   is_thinking?: boolean
   theme?: 'light' | 'dark' | 'system'
   theme_family?: 'sand' | 'notion' | 'sage' | 'blue' | 'rose'

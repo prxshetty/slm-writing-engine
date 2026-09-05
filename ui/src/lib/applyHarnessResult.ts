@@ -1,5 +1,6 @@
 import { API_BASE } from './api'
 import { useEditorStore } from '../stores/editorStore'
+import type { Editor } from '@tiptap/core'
 
 // ─── Paragraph three-way merge ───────────────────────────────────────────────
 // v1 scope: paragraph-oriented (blank-line separated), exact-match identity.
@@ -140,6 +141,23 @@ function setEditorContent(content: string) {
   s.editor?.commands.setContent(content)
 }
 
+// (Re)apply the diff highlight for a pending harness review. Runs after the
+// merge AND after NovelEditor's content-sync rebuild: that rebuild replaces
+// EditorState (to reset undo history), which re-initializes plugin state and
+// wipes the decorations set moments earlier.
+export function reapplyHarnessHighlight(editor: Editor): void {
+  const pending = useEditorStore.getState().aiPendingEdit
+  if (!pending?.harness || !pending.aiChangedIdx?.length) return
+  const blocks: { from: number; to: number }[] = []
+  editor.state.doc.forEach((node, offset) => {
+    if (node.isBlock) blocks.push({ from: offset, to: offset + node.nodeSize })
+  })
+  const idx = pending.aiChangedIdx.filter(k => k < blocks.length)
+  if (idx.length > 0) {
+    editor.commands.setAiHighlight(blocks[Math.min(...idx)].from, blocks[Math.max(...idx)].to)
+  }
+}
+
 // Called on `harness_done`. Never overwrites the user's newer edits:
 // merges AI disk changes with current editor content (3-way, base = snapshot).
 export async function applyHarnessResult(baseContent: string, harness: string): Promise<{ conflicts: number }> {
@@ -167,16 +185,7 @@ export async function applyHarnessResult(baseContent: string, harness: string): 
 
   // Highlight AI-owned ranges (single span min→max; limitation documented)
   const editor = useEditorStore.getState().editor
-  if (editor && aiChangedIdx.size > 0) {
-    const blocks: { from: number; to: number }[] = []
-    editor.state.doc.forEach((node, offset) => {
-      if (node.isBlock) blocks.push({ from: offset, to: offset + node.nodeSize })
-    })
-    const idx = [...aiChangedIdx].filter(k => k < blocks.length)
-    if (idx.length > 0) {
-      editor.commands.setAiHighlight(blocks[Math.min(...idx)].from, blocks[Math.max(...idx)].to)
-    }
-  }
+  if (editor) reapplyHarnessHighlight(editor)
   return { conflicts }
 }
 

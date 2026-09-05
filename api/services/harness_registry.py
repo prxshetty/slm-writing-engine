@@ -21,7 +21,11 @@ class HarnessDescriptor(TypedDict, total=False):
     agent_flag: str
     mode_agents: dict
     extra_args: List[str]
-    structured: bool
+    # Stream format: which line parser normalizes this CLI's stdout into
+    # queue items (chunk/thinking/tool/usage/error_text). "text" = raw
+    # human output, no structured events. format_args enables the stream.
+    stream: str
+    format_args: List[str]
 
 
 HARNESS_DESCRIPTORS: Dict[str, HarnessDescriptor] = {
@@ -39,8 +43,9 @@ HARNESS_DESCRIPTORS: Dict[str, HarnessDescriptor] = {
         "agent_flag": "--agent",
         "mode_agents": {"chat": "plan", "edit": "build"},
         # Structured stdout: `run --format json` emits raw JSON events
-        # (text/reasoning/tool_use/step_finish). Opencode-only.
-        "structured": True,
+        # (text/reasoning/tool_use/step_finish).
+        "stream": "opencode",
+        "format_args": ["--format", "json"],
     },
     "claude-code": {
         "name": "Claude Code",
@@ -55,6 +60,14 @@ HARNESS_DESCRIPTORS: Dict[str, HarnessDescriptor] = {
         ],
         "prompt_flag": "-p",
         "model_flag": "--model",
+        # JSONL events: assistant frames carry text/thinking/tool_use blocks,
+        # the result frame carries final usage. stream-json with -p requires
+        # --verbose or the CLI refuses. Verified against 2.1.236.
+        "stream": "claude",
+        "format_args": ["--output-format", "stream-json", "--verbose"],
+        # Headless default permission mode denies Edit/Write outright;
+        # acceptEdits auto-approves file edits under the run cwd.
+        "extra_args": ["--permission-mode", "acceptEdits"],
     },
     "codex": {
         "name": "Codex",
@@ -72,6 +85,13 @@ HARNESS_DESCRIPTORS: Dict[str, HarnessDescriptor] = {
         "subcommand": "exec",
         "workspace_flag": "-C",
         "model_flag": "-m",
+        # JSONL ThreadEvents: agent_message/reasoning items,
+        # turn.completed usage, error/turn.failed messages.
+        "stream": "codex",
+        "format_args": ["--json"],
+        # exec's default sandbox is read-only; workspace-write is the
+        # documented non-interactive mode that allows file edits.
+        "extra_args": ["-s", "workspace-write"],
     },
     "agy": {
         "name": "Antigravity",
@@ -82,8 +102,17 @@ HARNESS_DESCRIPTORS: Dict[str, HarnessDescriptor] = {
         "prompt_flag": "--print",
         "model_flag": "--model",
         # Headless print mode auto-denies permission prompts; accept-edits
-        # pre-approves file edits (review still happens in Margin's diff UI).
-        "extra_args": ["--mode", "accept-edits"],
+        # alone is NOT enough — write_file is still denied and edits either
+        # fail or get parked in ~/.gemini/antigravity-cli/scratch. Verified:
+        # skip-permissions + an ABSOLUTE --add-dir is what makes agy edit the
+        # workspace in place (the router resolves the workspace to absolute).
+        "extra_args": ["--mode", "accept-edits", "--dangerously-skip-permissions"],
+        # stream-json: step_update frames stream text deltas and tool steps;
+        # the result frame carries usage. NOTE: --print takes a value, so all
+        # flags must precede it (the argv builder does; a flag after --print
+        # is silently eaten as the prompt).
+        "stream": "agy",
+        "format_args": ["--output-format", "stream-json"],
     },
 }
 

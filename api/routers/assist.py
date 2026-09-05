@@ -5,6 +5,7 @@ import difflib
 import re
 import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -45,8 +46,8 @@ def _resolve_harness_argv(harness_id: str, prompt: str, cwd: str, mode: str = "e
     agent = (desc.get("mode_agents") or {}).get(mode)
     if agent and desc.get("agent_flag"):
         argv += [desc["agent_flag"], agent]
-    if desc.get("structured"):
-        argv += ["--format", "json"]
+    if desc.get("format_args"):
+        argv += list(desc["format_args"])
     # Workspace scope BEFORE the prompt: agy's --print swallows the next
     # arg, so the prompt must always be last.
     if desc.get("workspace_flag"):
@@ -56,7 +57,10 @@ def _resolve_harness_argv(harness_id: str, prompt: str, cwd: str, mode: str = "e
     if desc.get("prompt_flag"):
         argv += [desc["prompt_flag"], prompt]
     else:
-        argv.append(prompt)
+        # "--" forces everything after to parse as the positional message.
+        # Without it, a prompt starting with "-" (e.g. our "--- MARGIN
+        # DIRECTIVE ---" header) is parsed as flags and the CLI dumps help.
+        argv += ["--", prompt]
     if desc.get("cwd_flag"):
         argv += [desc["cwd_flag"], cwd]
     return argv
@@ -73,7 +77,7 @@ def _strip_ansi(text: str) -> str:
 def _summarize_tool_input(tool: str, state: dict) -> str:
     """Compact one-line summary for a tool call (name + file, no content)."""
     inp = (state or {}).get("input") or {}
-    for key in ("filePath", "path", "file", "pattern", "command"):
+    for key in ("filePath", "file_path", "path", "file", "pattern", "command"):
         val = inp.get(key)
         if val:
             s = str(val)
@@ -81,8 +85,36 @@ def _summarize_tool_input(tool: str, state: dict) -> str:
     return ""
 
 
+def _tool_event_path(state: dict) -> str:
+    """Full file path from a tool input, workspace-relative when possible.
+
+    Lets the frontend hot-refresh the sidebar when the agent writes files.
+    """
+    inp = (state or {}).get("input") or {}
+    for key in ("filePath", "file_path", "path", "file"):
+        val = inp.get(key)
+        if not val:
+            continue
+        p = str(val)
+        try:
+            return str(Path(p).resolve().relative_to(storage.workspace_dir.resolve()))
+        except Exception:
+            return p  # already relative, or outside the workspace
+    return ""
+
+
+def _queue_tool(tool: str, inp: dict):
+    """Build a ('tool', {...}) queue item shared by all structured parsers."""
+    state = {"input": inp}
+    return ("tool", {
+        "tool": tool,
+        "detail": _summarize_tool_input(tool, state),
+        "path": _tool_event_path(state) or None,
+    })
+
+
 def _parse_opencode_line(line: str):
-    """Parse one `--format json` line into [(qtype, val)] queue items.
+    """Parse one `opencode run --format json` line into queue items.
 
     text → chunk, reasoning → thinking, tool_use → tool summary,
     step_finish → usage tokens. Diffs/tool outputs are dropped: the
@@ -103,51 +135,196 @@ def _parse_opencode_line(line: str):
         return [("thinking", part["text"])]
     if d.get("type") == "tool_use":
         tool = part.get("tool", "tool")
-        detail = _summarize_tool_input(tool, part.get("state") or {})
-        return [("tool", {"tool": tool, "detail": detail})]
+        state = part.get("state") or {}
+        if state.get("status") == "error":
+            detail = _summarize_tool_input(tool, state)
+            err_text = state.get("error") or ""
+            label = f"{tool}{(' ' + detail) if detail else ''} failed"
+            if err_text:
+                label += f": {str(err_text)[:300]}"
+            return [("error_text", _strip_ansi(label))]
+        # opencode nests the input under state; fall back to part.input for
+        # older layouts.
+        return [_queue_tool(tool, state.get("input") or part.get("input") or {})]
     if ptype == "step-finish":
         toks = (part.get("tokens") or {})
         return [("usage", {
             "prompt_tokens": toks.get("input", 0),
             "completion_tokens": toks.get("output", 0),
         })]
+    # Error events (e.g. provider rate limits, auth failures) must surface —
+    # otherwise failures degrade to a bare "exited with code 1".
+    if d.get("type") == "error":
+        err = d.get("error") or {}
+        msg = err.get("message") if isinstance(err, dict) else err
+        if msg:
+            return [("error_text", _strip_ansi(str(msg)))]
+    if "error" in ptype:
+        text = part.get("text") or part.get("message") or ""
+        if text:
+            return [("error_text", _strip_ansi(str(text)))]
     return []
 
 
-def _build_harness_prompt(
-    mode: str,
-    message: str,
-    active_path: Optional[str] = None,
-    selected_text: Optional[str] = None,
-    ref_names: Optional[List[str]] = None,
-) -> str:
-    """Assemble the harness prompt in labeled sections.
+def _parse_agy_line(line: str):
+    """Parse one `agy --output-format stream-json` line.
 
-    Margin directive (role + target file + scope policy) → context
-    (verbatim selection, related files) → user instruction verbatim last,
-    so the user's words have the final say. Agents can read workspace
-    files themselves, so related files are named, not inlined.
+    step_update frames stream agent_response text as incremental deltas and
+    report tool steps (Gemini-style parameter keys, e.g. TargetFile) — tools
+    emit on their DONE frame only, so each call yields one row. The result
+    frame carries final usage and failure status. init frames and non-JSON
+    stderr noise are dropped.
     """
-    if mode == "edit" and active_path:
-        lines = [
-            "--- MARGIN DIRECTIVE ---",
-            f"You are revising prose in the file {active_path} in the current working directory.",
-            "Apply the requested change directly to that file with your file-editing tools. "
-            "Do not just describe or print the result in your response.",
-            "Margin editing policy: make the MINIMAL edit that satisfies the request — "
-            "confine changes to the selected passage or its paragraph. Do not rewrite, "
-            "expand, or restyle unrelated paragraphs.",
-        ]
-        if ref_names:
-            lines.append(f"You may also read these related files: {', '.join(ref_names)}.")
-        if selected_text:
-            lines += ["", "--- SELECTED PASSAGE ---", selected_text]
-        lines += ["", "--- USER REQUEST ---", message]
-        return "\n".join(lines)
-    parts = [message]
-    if selected_text:
-        parts.append(f"---\n{selected_text}")
-    return "\n\n".join(parts)
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        d = json.loads(line)
+    except Exception:
+        return []
+    event = d.get("event")
+    if event == "step_update":
+        step = d.get("step_update") or {}
+        stype = step.get("step_type", "")
+        if stype == "agent_response":
+            delta = step.get("text_delta") or ""
+            return [("chunk", delta)] if delta else []
+        if "reasoning" in stype:
+            delta = step.get("text_delta") or ""
+            return [("thinking", delta)] if delta else []
+        if stype == "tool" and step.get("state") == "DONE":
+            params = (step.get("tool_info") or {}).get("parameters") or {}
+            path = ""
+            # Gemini-style capitalized keys: writes use TargetFile, reads
+            # (view_file) use AbsolutePath.
+            for key in ("TargetFile", "AbsolutePath", "FilePath", "Path"):
+                if params.get(key):
+                    path = str(params[key])
+                    break
+            detail = path.split("/")[-1] if path else str(params.get("Command") or "")[:80]
+            return [("tool", {
+                "tool": step.get("tool_name", "tool"),
+                "detail": detail,
+                "path": _tool_event_path({"input": {"path": path}}) or (path or None),
+            })]
+        return []
+    if event == "result":
+        res = d.get("result") or {}
+        items = []
+        if res.get("status") not in (None, "SUCCESS"):
+            resp = str(res.get("response") or "")
+            if resp:
+                items.append(("error_text", _strip_ansi(resp)))
+        usage = res.get("usage") or {}
+        if usage:
+            items.append(("usage", {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }))
+        return items
+    return []
+
+
+def _parse_claude_line(line: str):
+    """Parse one `claude -p --output-format stream-json --verbose` line.
+
+    assistant → text/thinking/tool_use blocks; result → usage or error.
+    system/user events are dropped (init noise, tool outputs).
+    Non-JSON lines are dropped: stderr is merged into stdout and carries
+    the CLI's own diagnostics, not chat content.
+    """
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        d = json.loads(line)
+    except Exception:
+        return []
+    items = []
+    if d.get("type") == "assistant":
+        for block in (d.get("message") or {}).get("content") or []:
+            btype = block.get("type")
+            if btype == "text" and block.get("text"):
+                items.append(("chunk", block["text"]))
+            elif btype == "thinking" and block.get("thinking"):
+                items.append(("thinking", block["thinking"]))
+            elif btype == "tool_use":
+                items.append(_queue_tool(block.get("name", "tool"), block.get("input") or {}))
+    elif d.get("type") == "result":
+        if d.get("is_error"):
+            items.append(("error_text", _strip_ansi(str(d.get("result") or "Claude Code error"))))
+        usage = d.get("usage") or {}
+        if usage.get("input_tokens") is not None:
+            items.append(("usage", {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }))
+    return items
+
+
+def _parse_codex_line(line: str, state: dict):
+    """Parse one `codex exec --json` ThreadEvent line.
+
+    item.updated/item.completed carry cumulative text for
+    agent_message/reasoning items — state remembers what was already
+    streamed so only deltas are emitted. file_change and
+    command_execution become tool events; turn.completed carries usage.
+    Non-JSON lines (merged stderr diagnostics) are dropped.
+    """
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        d = json.loads(line)
+    except Exception:
+        return []
+    items = []
+    etype = d.get("type", "")
+    if etype in ("item.updated", "item.completed"):
+        item = d.get("item") or {}
+        itype = item.get("type", "")
+        if itype in ("agent_message", "reasoning"):
+            key = f"{itype}:{item.get('id', '')}"
+            text = item.get("text") or ""
+            prev = state.get(key, "")
+            delta = text[len(prev):] if text.startswith(prev) else text
+            state[key] = text
+            if delta:
+                items.append(("chunk" if itype == "agent_message" else "thinking", delta))
+        elif itype == "file_change" and etype == "item.completed":
+            for change in item.get("changes") or []:
+                p = change.get("path") or ""
+                if not p:
+                    continue
+                items.append(("tool", {
+                    "tool": change.get("kind", "edit"),
+                    "detail": p.split("/")[-1],
+                    "path": _tool_event_path({"input": {"path": p}}) or p,
+                }))
+        elif itype == "command_execution" and etype == "item.completed":
+            cmd = str(item.get("command") or "")[:80]
+            items.append(("tool", {"tool": "bash", "detail": cmd, "path": None}))
+        elif itype == "mcp_tool_call" and etype == "item.completed":
+            items.append(("tool", {"tool": item.get("tool") or "mcp", "detail": item.get("server") or "", "path": None}))
+    elif etype == "turn.completed":
+        toks = d.get("usage") or {}
+        items.append(("usage", {
+            "prompt_tokens": toks.get("input_tokens", 0),
+            "completion_tokens": toks.get("output_tokens", 0),
+        }))
+    elif etype == "turn.failed":
+        msg = ((d.get("error") or {}).get("message")) or "Codex turn failed"
+        if msg != state.get("_last_err"):
+            state["_last_err"] = msg
+            items.append(("error_text", _strip_ansi(str(msg))))
+    elif etype == "error":
+        # Codex emits the same message as a bare error event AND turn.failed;
+        # emit each distinct message once.
+        msg = d.get("message")
+        if msg and str(msg) != state.get("_last_err"):
+            state["_last_err"] = str(msg)
+            items.append(("error_text", _strip_ansi(str(msg))))
+    return items
 
 
 async def run_harness(argv: list, cwd: str, stop_event: threading.Event, queue: asyncio.Queue):
@@ -198,16 +375,31 @@ def _resolve_simple_assist_client() -> llm.LLMClient:
     return llm.LLMClient(is_thinking=is_thinking)
 
 
-def _build_simple_system_prompt(base_text: str = "", include_additional_context: bool = True) -> str:
-    """Prepend additional_context to a system prompt if it's non-empty."""
-    system_prompt = base_text
-    if include_additional_context:
-        s = storage.get_settings()
-        ctx = (s.get("additional_context") or "").strip()
-        if ctx:
-            system_prompt = f"\n\n--- USER PREFERENCES ---\n{ctx}\n--- END USER PREFERENCES ---\n\n{system_prompt}"
-                
-    return system_prompt
+def _build_session_history_text(session_id: Optional[str], settings: dict) -> str:
+    """Past chat turns as plain text for harness prompts.
+
+    Harnesses take a single prompt string (not a message list), so history
+    goes in as labeled text. Bounded by history_turns like the endpoint path.
+    """
+    if not session_id:
+        return ""
+    logs = storage.get_simple_ai_logs()
+    filtered = [
+        log for log in logs
+        if log.get("session_id") == session_id
+        and log.get("mode") == "chat"
+        and log.get("success", True)
+    ]
+    filtered.sort(key=lambda x: x.get("timestamp", ""))
+    turns = int(settings.get("history_turns", 5))
+    recent = filtered[-turns:] if turns > 0 else []
+    if not recent:
+        return ""
+    lines = ["PAST_CONVERSATION:"]
+    for log in recent:
+        lines.append(f"USER: {log.get('instruction', '')}")
+        lines.append(f"ASSISTANT: {log.get('output', '')}")
+    return "\n".join(lines)
 
 
 def _is_blocked(filepath: str, ignored: set) -> bool:
@@ -219,6 +411,31 @@ def _is_blocked(filepath: str, ignored: set) -> bool:
     if filepath in ignored:
         return True
     return False
+
+
+def _workspace_index_line() -> str:
+    """One-line pointer to the workspace's manifest indexes, for harness prompts.
+
+    Pointers, not contents: harnesses read what they need themselves, and the
+    manifests tell a fresh agent where characters/chapters/styles live.
+    """
+    s = storage.get_settings()
+    ignored = set(s.get("ignored_ref_files") or [])
+    names = []
+    try:
+        for f in sorted(storage.workspace_dir.glob("*/*.md")):
+            if f.name != f"{f.parent.name.upper()}.md":
+                continue
+            rel = f"{f.parent.name}/{f.name}"
+            if _is_blocked(rel, ignored):
+                continue
+            names.append(rel)
+    except Exception as e:
+        print(f"Error scanning workspace indexes: {e}")
+        return ""
+    if not names:
+        return ""
+    return "Workspace indexes (read to orient yourself): " + ", ".join(names)
 
 
 def _inject_pinned_ref_files(system_parts: list, already_seen: set) -> list:
@@ -512,8 +729,6 @@ def run_planner(
         user_prompt_lines.append("AVAILABLE_CONTEXT:\n" + "\n\n".join(manifest_sections))
     
     user = "\n".join(user_prompt_lines)
-    system = _build_simple_system_prompt(system, include_additional_context=False)
-    
     client = _resolve_simple_assist_client()
     raw = client.generate_to_completion(
         system_prompt=system,
@@ -544,7 +759,7 @@ def build_generator_prompts(
     available_files: List[Dict[str, str]] = None,
 ) -> tuple[str, str]:
     
-    system_parts = [_build_simple_system_prompt(_load_simple_prompt("simple-writer.md"))]
+    system_parts = [_load_simple_prompt("simple-writer.md")]
     
     available = available_files if available_files is not None else []
     available_paths = [f['path'] for f in available]
@@ -586,8 +801,68 @@ def build_generator_prompts(
 
 
 
+async def _run_planner_turn(payload: SimpleAssistRequest, edit_mode: str, loop):
+    """Run the planner and log the turn. Returns (plan, system, user, raw)."""
+    plan, planner_system, planner_user, planner_raw, planner_usage, planner_model = await loop.run_in_executor(
+        None,
+        lambda: run_planner(
+            payload.content,
+            payload.message,
+            payload.selected_text,
+            payload.cursor_paragraph_text,
+            payload.session_id,
+        )
+    )
+
+    await loop.run_in_executor(
+        None,
+        lambda: _log_simple_assist(
+            mode="edit_plan",
+            session_id=payload.session_id,
+            system_prompt=planner_system,
+            user_prompt=planner_user,
+            response=planner_raw,
+            instruction=payload.message,
+            selected_text=payload.selected_text,
+            edit_mode=edit_mode,
+            success=True,
+            model_used=planner_model,
+            planner_output=planner_raw,
+            prompt_tokens=planner_usage.get("prompt_tokens", 0) if planner_usage else 0,
+            completion_tokens=planner_usage.get("completion_tokens", 0) if planner_usage else 0,
+            total_tokens=planner_usage.get("total_tokens", 0) if planner_usage else 0,
+        )
+    )
+    return plan, planner_system, planner_user, planner_raw
+
+
+def _compose_chat_prompts(payload: SimpleAssistRequest, message: str):
+    """Build (full_system, user_message, settings) shared by endpoint + harness chat."""
+    full_system = _load_simple_prompt("simple-chat.md")
+
+    settings = storage.get_settings()
+    history_str = _build_planner_history(payload.session_id, settings)
+    if history_str:
+        full_system += f"\n\n{history_str}"
+
+    if payload.content:
+        if payload.active_filename:
+            full_system += f"\n\nHere is the file the user is currently viewing: {payload.active_filename}\n{payload.content}"
+        else:
+            full_system += f"\n\nHere is the user's document for context:\n{payload.content}"
+
+    user_message = message
+    if payload.selected_text:
+        user_message = f"SELECTED_TEXT:\n{payload.selected_text}\n\nUSER_MESSAGE:\n{user_message}"
+    elif payload.cursor_paragraph_text:
+        user_message = f"ANCHOR_PARAGRAPH_TEXT:\n{payload.cursor_paragraph_text}\n\nUSER_MESSAGE:\n{user_message}"
+
+    return full_system, user_message, settings
+
+
 @router.post("/simple")
 async def simple_assist(payload: SimpleAssistRequest):
+
     message = payload.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Missing message")
@@ -609,8 +884,8 @@ async def simple_assist(payload: SimpleAssistRequest):
         try:
             if payload.harness and payload.harness not in ("api", "none"):
                 yield {"data": json.dumps({"status": "generating"})}
-                # Resolve the active file first: the agent needs to know WHAT
-                # to edit, not just receive loose text.
+                # Resolve the active file first and flush the editor buffer
+                # so the agent operates on fresh file state.
                 active_path = None
                 if payload.active_filename:
                     active_path = next(
@@ -623,21 +898,71 @@ async def simple_assist(payload: SimpleAssistRequest):
                             storage.update_input_file(active_path, payload.content)
                         except Exception as e:
                             print(f"Harness pre-flush failed for {active_path}: {e}")
-                ref_names = [f.get("name") for f in (payload.ref_files or []) if f.get("name")]
-                harness_prompt = _build_harness_prompt(
-                    mode,
-                    payload.message,
-                    active_path=active_path,
-                    selected_text=payload.selected_text,
-                    ref_names=ref_names or None,
-                )
+                loop = asyncio.get_running_loop()
+                if mode == "edit":
+                    # Harnesses plan and fetch context themselves: the endpoint
+                    # planner is SLM plumbing (JSON schema drills, file
+                    # selection) and the writer template is a splice contract
+                    # for text the backend inserts — neither fits an agent that
+                    # edits files directly. Minimal briefing instead: the
+                    # user's referent, the instruction, and index pointers.
+                    yield {"data": json.dumps({
+                        "status": "context_resolved",
+                        "context_needed": []
+                    })}
+                    user_parts = []
+                    if active_path:
+                        user_parts.append(f"ACTIVE_FILE: {active_path}")
+                    if payload.selected_text:
+                        user_parts.append(f"SELECTED_TEXT:\n{payload.selected_text}")
+                    elif payload.cursor_paragraph_text:
+                        user_parts.append(f"ANCHOR_PARAGRAPH_TEXT:\n{payload.cursor_paragraph_text}")
+                    user_parts.append(f"INSTRUCTION:\n{message}")
+                    # Past work, bounded by history_turns: prior edits plus
+                    # prior chat turns, so follow-ups ("do that again, but…")
+                    # resolve without re-explaining.
+                    hist_settings = storage.get_settings()
+                    edits_hist = _build_planner_history(payload.session_id, hist_settings)
+                    if edits_hist:
+                        user_parts.append(edits_hist)
+                    past_conv = _build_session_history_text(payload.session_id, hist_settings)
+                    if past_conv:
+                        user_parts.append(past_conv)
+                    index_line = _workspace_index_line()
+                    if index_line:
+                        user_parts.append(index_line)
+                    user_prompt = "\n\n".join(user_parts)
+                    # Standing instructions (the deliverable — edit files, not
+                    # reply — and taste) live in prompts/harness-edit.md,
+                    # editable under Settings > Context. Without them agents
+                    # answer with prose instead of editing (12 reads, 0 edits
+                    # observed on opencode build).
+                    system_prompt = _load_simple_prompt("harness-edit.md").strip()
+                    harness_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+                else:
+                    # Same chat composition as the endpoint path, plus a
+                    # pointer to the workspace indexes: endpoint chat has no
+                    # tools to follow them, a harness does.
+                    full_system, user_message, _ = _compose_chat_prompts(payload, message)
+                    system_prompt, user_prompt = full_system, user_message
+                    parts = [full_system]
+                    index_line = _workspace_index_line()
+                    if index_line:
+                        parts.append(index_line)
+                    parts.append(f"--- USER MESSAGE ---\n{user_message}")
+                    harness_prompt = "\n\n".join(parts)
+                # Absolute: harnesses scope their writable workspace to the
+                # path we pass (agy --add-dir treats a missing/broken dir as
+                # "no writable workspace" and edits fall back to its scratch).
+                workspace = str(storage.workspace_dir.resolve())
                 argv = _resolve_harness_argv(
-                    payload.harness, harness_prompt, str(storage.workspace_dir), mode=mode
+                    payload.harness, harness_prompt, workspace, mode=mode
                 )
                 loop = asyncio.get_running_loop()
                 hqueue: asyncio.Queue = asyncio.Queue()
-                structured = bool(HARNESS_DESCRIPTORS[payload.harness].get("structured"))
-                loop.create_task(run_harness(argv, str(storage.workspace_dir), stop_event, hqueue))
+                stream = HARNESS_DESCRIPTORS[payload.harness].get("stream")
+                codex_state: dict = {}
+                loop.create_task(run_harness(argv, workspace, stop_event, hqueue))
                 full_harness_output = ""
                 full_harness_thinking = ""
                 harness_returncode = 0
@@ -645,19 +970,28 @@ async def simple_assist(payload: SimpleAssistRequest):
                 usage_prompt = 0
                 usage_completion = 0
                 line_buf = ""
-                # Opencode emits JSON-lines; other harnesses stream raw text.
-                # Chunk boundaries don't align with lines, so buffer until \n.
+                # All four harnesses emit JSON lines; the text branch is a
+                # safety fallback for stream formats we haven't wired. Chunk
+                # boundaries don't align with lines, so buffer until \n.
                 while True:
                     msg_type, val = await hqueue.get()
                     if msg_type == "chunk":
-                        if not structured:
+                        if not stream:
                             full_harness_output += _strip_ansi(val)
                             yield {"data": json.dumps({"status": "chunk", "chunk": _strip_ansi(val)})}
                         else:
                             line_buf += val
                             *complete, line_buf = line_buf.split("\n")
                             for line in complete:
-                                for qtype, qval in _parse_opencode_line(line):
+                                if stream == "codex":
+                                    events = _parse_codex_line(line, codex_state)
+                                elif stream == "claude":
+                                    events = _parse_claude_line(line)
+                                elif stream == "agy":
+                                    events = _parse_agy_line(line)
+                                else:
+                                    events = _parse_opencode_line(line)
+                                for qtype, qval in events:
                                     if qtype == "chunk":
                                         full_harness_output += qval
                                         yield {"data": json.dumps({"status": "chunk", "chunk": qval})}
@@ -666,32 +1000,45 @@ async def simple_assist(payload: SimpleAssistRequest):
                                         yield {"data": json.dumps({"status": "thinking_chunk", "chunk": qval})}
                                     elif qtype == "tool":
                                         tool_calls.append(qval)
-                                        yield {"data": json.dumps({"status": "tool", "tool": qval["tool"], "detail": qval["detail"]})}
+                                        tool_evt = {"status": "tool", "tool": qval["tool"], "detail": qval["detail"]}
+                                        if qval.get("path"):
+                                            tool_evt["path"] = qval["path"]
+                                        yield {"data": json.dumps(tool_evt)}
                                     elif qtype == "usage":
                                         usage_prompt += qval.get("prompt_tokens", 0)
                                         usage_completion += qval.get("completion_tokens", 0)
+                                    elif qtype == "error_text":
+                                        full_harness_output += ("\n" if full_harness_output else "") + qval
+                                        yield {"data": json.dumps({"status": "chunk", "chunk": ("\n" + qval)})}
                     elif msg_type == "done":
                         harness_returncode = val if isinstance(val, int) else 0
                         break
                     elif msg_type == "error":
                         raise val
                 if harness_returncode != 0:
+                    tail_lines = full_harness_output.strip().splitlines()[-5:]
+                    tail = "\n".join(tail_lines).strip() or "no output captured"
                     raise RuntimeError(
-                        f"{HARNESS_DESCRIPTORS[payload.harness]['name']} exited with code {harness_returncode}"
+                        f"{HARNESS_DESCRIPTORS[payload.harness]['name']} exited with code {harness_returncode}. Last output:\n{tail}"
                     )
                 s = storage.get_settings()
                 harness_model = ((s.get("harnesses") or {}).get(payload.harness) or {}).get("model")
-                harness_agent = (HARNESS_DESCRIPTORS[payload.harness].get("mode_agents") or {}).get(mode)
+                # Any harness that reported no usage: fall back to a len/4
+                # estimate so token counts are never blank. Documented in
+                # docs/configuration/harnesses.md.
+                if usage_prompt == 0 and harness_prompt:
+                    usage_prompt = max(1, len(harness_prompt) // 4)
+                if usage_completion == 0 and full_harness_output:
+                    usage_completion = max(1, len(full_harness_output) // 4)
                 await loop.run_in_executor(
                     None,
                     lambda: _log_simple_assist(
                         mode="chat" if mode == "chat" else "edit_write",
                         session_id=payload.session_id,
-                        system_prompt=(
-                            f"Harness: {payload.harness}"
-                            f" | model: {harness_model or 'default'}"
-                            + (f" | agent: {harness_agent}" if harness_agent else "")
-                            + f" | argv: {' '.join(a if len(a) < 60 else a[:60] + '…' for a in argv)}"
+                        # The CLI invocation itself carries model/agent/
+                        # workspace; the full prompt is logged as user_prompt.
+                        system_prompt=" ".join(
+                            a if len(a) < 60 else a[:60] + "…" for a in argv
                         ),
                         user_prompt=harness_prompt,
                         response=full_harness_output,
@@ -715,36 +1062,8 @@ async def simple_assist(payload: SimpleAssistRequest):
                     yield {"data": json.dumps({"status": "planning"})}
 
                     loop = asyncio.get_running_loop()
-                    plan, planner_system, planner_user, planner_raw, planner_usage, planner_model = await loop.run_in_executor(
-                        None,
-                        lambda: run_planner(
-                            payload.content,
-                            payload.message,
-                            payload.selected_text,
-                            payload.cursor_paragraph_text,
-                            payload.session_id,
-                        )
-                    )
+                    plan, planner_system, planner_user, planner_raw = await _run_planner_turn(payload, edit_mode, loop)
 
-                    await loop.run_in_executor(
-                        None,
-                        lambda: _log_simple_assist(
-                            mode="edit_plan",
-                            session_id=payload.session_id,
-                            system_prompt=planner_system,
-                            user_prompt=planner_user,
-                            response=planner_raw,
-                            instruction=payload.message,
-                            selected_text=payload.selected_text,
-                            edit_mode=edit_mode,
-                            success=True,
-                            model_used=planner_model,
-                            planner_output=planner_raw,
-                            prompt_tokens=planner_usage.get("prompt_tokens", 0) if planner_usage else 0,
-                            completion_tokens=planner_usage.get("completion_tokens", 0) if planner_usage else 0,
-                            total_tokens=planner_usage.get("total_tokens", 0) if planner_usage else 0,
-                        )
-                    )
                     context_needed = plan.get("context_needed", [])
                     query = plan.get("refined_query") or payload.message
                 else:
@@ -866,26 +1185,8 @@ async def simple_assist(payload: SimpleAssistRequest):
 
                 system_prompt = _load_simple_prompt("simple-chat.md")
                 client = _resolve_simple_assist_client()
-                full_system = _build_simple_system_prompt(system_prompt)
-                
-                settings = storage.get_settings()
-                history_str = _build_planner_history(payload.session_id, settings)
-                if history_str:
-                    full_system += f"\n\n{history_str}"
-                    
-                if payload.content:
-                    if payload.active_filename:
-                        full_system += f"\n\nHere is the file the user is currently viewing: {payload.active_filename}\n{payload.content}"
-                    else:
-                        full_system += f"\n\nHere is the user's document for context:\n{payload.content}"
+                full_system, user_message, settings = _compose_chat_prompts(payload, message)
 
-                user_message = message
-                if payload.selected_text:
-                    user_message = f"SELECTED_TEXT:\n{payload.selected_text}\n\nUSER_MESSAGE:\n{user_message}"
-                elif payload.cursor_paragraph_text:
-                    user_message = f"ANCHOR_PARAGRAPH_TEXT:\n{payload.cursor_paragraph_text}\n\nUSER_MESSAGE:\n{user_message}"
-
-                settings = storage.get_settings()
                 messages = _build_chat_messages(payload.session_id, full_system, user_message, settings)
 
                 user_prompt = ""

@@ -5,6 +5,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { API_BASE } from '../lib/api'
 import { streamSSE } from '../lib/stream-sse'
 import { applyHarnessResult } from '../lib/applyHarnessResult'
+import { scheduleFileRefresh } from '../lib/refreshFiles'
 import { HarnessIcon } from './HarnessIcon'
 import type { FileEntry } from '../stores/editorStore'
 
@@ -447,7 +448,6 @@ export function SimpleAssist() {
   const [showHistoryDropdown, setShowHistoryDropdown] = useState(false)
   const [sessionLoadCount, setSessionLoadCount] = useState(3)
   const [mode, setMode] = useState<'chat' | 'edit'>('edit')
-  const [harness, setHarness] = useState('none')
   const [activeHarness, setActiveHarness] = useState('none')
   const [harnessList, setHarnessList] = useState<Array<{ id: string; name: string; installed: boolean; version: string | null }>>([])
   const [noticeText, setNoticeText] = useState('')
@@ -457,7 +457,10 @@ export function SimpleAssist() {
   const harnessBaseRef = useRef('')
   const harnessLabel = (id: string) => harnessList.find(h => h.id === id)?.name ?? id
   const hasSelection = !!pendingEditSelection
-  const { settings, fetchSettings, setShowSettings } = useSettingsStore()
+  const { settings, fetchSettings, setShowSettings, updateSettings } = useSettingsStore()
+  // Single source of truth: the panel, SettingsModal, and bubble menu all
+  // read/write settings.default_harness, so they can never disagree.
+  const harness = settings?.default_harness || 'none'
 
 
 
@@ -469,11 +472,7 @@ export function SimpleAssist() {
     if (settings?.default_mode) {
       setMode(settings.default_mode as 'chat' | 'edit')
     }
-    if (settings && settings.default_harness !== undefined) {
-      setHarness(settings.default_harness || 'none')
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.default_mode, settings?.default_harness])
+  }, [settings?.default_mode])
 
   const [showFileDropdown, setShowFileDropdown] = useState(false)
   const [fileQuery, setFileQuery] = useState('')
@@ -545,30 +544,40 @@ export function SimpleAssist() {
 
 
   const activeContextWindow = useMemo(() => {
-    if (!settings) return 8192
+    if (!settings) return undefined
+    if (harness !== 'none') {
+      // Harness ring only when the user set a window; otherwise hidden.
+      return settings.harnesses?.[harness]?.context_window || undefined
+    }
     if (settings.active_endpoint && settings.endpoints[settings.active_endpoint]) {
       return settings.endpoints[settings.active_endpoint].context_window || 8192
     }
     return settings.default_context_window || 8192
-  }, [settings])
+  }, [settings, harness])
 
-  const latestInputTokens = useMemo(() => {
-    if (filteredLogs.length === 0) return 0
-    const lastLog = filteredLogs[filteredLogs.length - 1]
-    return lastLog.prompt_tokens || 0
-  }, [filteredLogs])
+  const sessionInputTokens = useMemo(() =>
+    filteredLogs.reduce((sum, l) => sum + (l.prompt_tokens || 0), 0),
+    [filteredLogs])
 
-  const latestOutputTokens = useMemo(() => {
-    if (filteredLogs.length === 0) return 0
-    const lastLog = filteredLogs[filteredLogs.length - 1]
-    return lastLog.completion_tokens || 0
+  const sessionOutputTokens = useMemo(() =>
+    filteredLogs.reduce((sum, l) => sum + (l.completion_tokens || 0), 0),
+    [filteredLogs])
+
+  // Context = what the model last saw (its prompt), NOT a session sum:
+  // harness runs are independent conversations and endpoint prompts carry
+  // their own history, so summing across requests overstates the window.
+  const contextUsedTokens = useMemo(() => {
+    for (let i = filteredLogs.length - 1; i >= 0; i--) {
+      const t = filteredLogs[i]?.prompt_tokens || 0
+      if (t > 0) return t
+    }
+    return 0
   }, [filteredLogs])
 
   const percentUsed = useMemo(() => {
     if (!activeContextWindow) return 0
-    const total = latestInputTokens + latestOutputTokens
-    return (total / activeContextWindow) * 100
-  }, [latestInputTokens, latestOutputTokens, activeContextWindow])
+    return (contextUsedTokens / activeContextWindow) * 100
+  }, [contextUsedTokens, activeContextWindow])
 
   const percentLeft = useMemo(() => {
     return Math.max(0, 100 - percentUsed)
@@ -825,15 +834,18 @@ export function SimpleAssist() {
             }
             }
           } else if (status === 'tool') {
-            // Opencode-only: compact tool rows, display only, never insert
-            if (harness === 'opencode') {
-              setIsPlanning(false)
-              setIsGenerating(true)
-              setActiveToolRows(prev => [...prev, { tool: String(data.tool || 'tool'), detail: String(data.detail || '') }])
-            }
+            // All four harnesses stream structured events and emit tool rows.
+            setIsPlanning(false)
+            setIsGenerating(true)
+            setActiveToolRows(prev => [...prev, { tool: String(data.tool || 'tool'), detail: String(data.detail || '') }])
+            // Write/edit tool landed on disk → refresh the sidebar tree
+            // (reads/globs are noise; the open document stays on the
+            // merge-at-done path, this only adds new files to the tree).
+            if (data.path && !['read', 'glob', 'grep'].includes(String(data.tool).toLowerCase())) scheduleFileRefresh()
           } else if (status === 'harness_done') {
             setIsPlanning(false)
             setIsGenerating(false)
+            scheduleFileRefresh(0)
             applyHarnessResult(harnessBaseRef.current, harness)
               .then(({ conflicts }) => {
                 if (conflicts > 0) {
@@ -988,12 +1000,14 @@ export function SimpleAssist() {
             setIsGenerating(true)
             setStreamingChatText(prev => prev + (data.chunk as string))
           } else if (status === 'tool') {
-            // Opencode-only: compact tool rows (other harnesses never emit this)
-            if (harness === 'opencode') {
-              setIsPlanning(false)
-              setIsGenerating(true)
-              setActiveToolRows(prev => [...prev, { tool: String(data.tool || 'tool'), detail: String(data.detail || '') }])
-            }
+            // All four harnesses stream structured events and emit tool rows.
+            setIsPlanning(false)
+            setIsGenerating(true)
+            setActiveToolRows(prev => [...prev, { tool: String(data.tool || 'tool'), detail: String(data.detail || '') }])
+            // Write/edit tool landed on disk → refresh the sidebar tree
+            // (reads/globs are noise; the open document stays on the
+            // merge-at-done path, this only adds new files to the tree).
+            if (data.path && !['read', 'glob', 'grep'].includes(String(data.tool).toLowerCase())) scheduleFileRefresh()
           } else if (status === 'chat') {
             if (data.model_used) {
               useEditorStore.getState().setActiveModel(data.model_used as string)
@@ -1001,6 +1015,7 @@ export function SimpleAssist() {
           } else if (status === 'harness_done') {
             setIsPlanning(false)
             setIsGenerating(false)
+            scheduleFileRefresh(0)
             applyHarnessResult(harnessBaseRef.current, harness)
               .then(({ conflicts }) => {
                 if (conflicts > 0) {
@@ -1239,15 +1254,14 @@ export function SimpleAssist() {
           >
             <PlanModeIcon />
           </button>
-          {/* Harness selector: icon + name, None = configured endpoint */}
+          {/* Harness selector: logo only, name in tooltip + dropdown */}
           <div className="relative" ref={harnessDropdownRef}>
             <button
               onClick={() => setShowHarnessDropdown(v => !v)}
-              title="AI harness (Endpoint = use configured endpoint)"
-              className="ml-1 flex items-center gap-1 max-w-[110px] text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-heading)] transition-colors cursor-pointer"
+              title={harness === 'none' ? 'Endpoint — use configured endpoint' : harnessLabel(harness)}
+              className="ml-1 flex items-center gap-0.5 text-[var(--text-secondary)] hover:text-[var(--text-heading)] transition-colors cursor-pointer"
             >
-              <HarnessIcon id={harness} className="w-3 h-3" />
-              <span className="truncate">{harness === 'none' ? 'Endpoint' : harnessLabel(harness)}</span>
+              <HarnessIcon id={harness} className="w-3.5 h-3.5" />
               <ChevronDown className={`w-2.5 h-2.5 opacity-60 shrink-0 transition-transform duration-150 ${showHarnessDropdown ? 'rotate-180' : ''}`} />
             </button>
             {showHarnessDropdown && (
@@ -1256,7 +1270,7 @@ export function SimpleAssist() {
                   id="none"
                   label="Endpoint"
                   selected={harness === 'none'}
-                  onSelect={() => { setHarness('none'); setShowHarnessDropdown(false) }}
+                  onSelect={() => { updateSettings({ default_harness: 'none' }); setShowHarnessDropdown(false) }}
                 />
                 {harnessList.map(h => (
                   <HarnessOption
@@ -1266,7 +1280,7 @@ export function SimpleAssist() {
                     disabled={!h.installed}
                     hint={h.installed ? undefined : 'not installed'}
                     selected={harness === h.id}
-                    onSelect={() => { setHarness(h.id); setShowHarnessDropdown(false) }}
+                    onSelect={() => { updateSettings({ default_harness: h.id }); setShowHarnessDropdown(false) }}
                   />
                 ))}
               </div>
@@ -1276,7 +1290,8 @@ export function SimpleAssist() {
 
         {/* Context Ring and Action Button Group */}
         <div className="flex items-center gap-2 -mr-1.5">
-          {/* Circular Context Ring */}
+          {/* Circular Context Ring (hidden when no window is known) */}
+          {activeContextWindow ? (
           <div
             className={`group relative flex items-center gap-1.5 ${percentUsed === 0 ? 'opacity-45' : 'opacity-100'} transition-opacity duration-200`}
           >
@@ -1304,12 +1319,16 @@ export function SimpleAssist() {
             {/* Custom Tooltip */}
             <div className="pointer-events-none absolute bottom-[calc(100%+8px)] right-0 opacity-0 group-hover:opacity-100 transition-opacity bg-[var(--bg-elevated)] border border-[var(--border)] shadow-[0_4px_16px_rgba(0,0,0,0.06)] rounded-[8px] p-2.5 z-50 whitespace-nowrap text-[10.5px] font-mono text-[var(--text-secondary)] leading-relaxed flex flex-col gap-0.5 animate-fade-in origin-bottom-right">
               <div className="flex justify-between gap-4">
-                <span>Input tokens:</span>
-                <span className="text-[var(--text)]">{latestInputTokens.toLocaleString()}</span>
+                <span>Context (last request):</span>
+                <span className="text-[var(--text)]">{contextUsedTokens.toLocaleString()}</span>
               </div>
               <div className="flex justify-between gap-4">
-                <span>Output tokens:</span>
-                <span className="text-[var(--text)]">{latestOutputTokens.toLocaleString()}</span>
+                <span>Session input:</span>
+                <span className="text-[var(--text)]">{sessionInputTokens.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Session output:</span>
+                <span className="text-[var(--text)]">{sessionOutputTokens.toLocaleString()}</span>
               </div>
               <div className="flex justify-between gap-4">
                 <span>Context window:</span>
@@ -1322,6 +1341,14 @@ export function SimpleAssist() {
               </div>
             </div>
           </div>
+          ) : (
+            <span
+              className="text-[10px] font-mono text-[var(--text-secondary)]"
+              title={`Last request context: ${contextUsedTokens.toLocaleString()} (${sessionInputTokens.toLocaleString()} in / ${sessionOutputTokens.toLocaleString()} out this session; no context window set)`}
+            >
+              {contextUsedTokens.toLocaleString()}
+            </span>
+          )}
 
           {/* Action Button: Stop when working, Send/Submit otherwise */}
           <button
@@ -1663,7 +1690,7 @@ export function SimpleAssist() {
                     )
                   })}
 
-                {/* Harness tool calls (opencode only) */}
+                {/* Harness tool calls (structured harnesses) */}
                 {activeToolRows.map((t, i) => (
                   <div key={`htool-${i}`} className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)] font-sans select-none ml-1">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

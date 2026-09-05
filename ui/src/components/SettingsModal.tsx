@@ -245,7 +245,7 @@ function GeneralSettings({ settings, updateSettings }: { settings: AppSettings, 
 
       <section>
         <h3 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Default Verbosity</h3>
-        <p className="text-[12px] text-[var(--text-secondary)] mb-3">Control the target length of AI responses and edits.</p>
+        <p className="text-[12px] text-[var(--text-secondary)] mb-3">Control the target length of endpoint responses and edits. Endpoints only — harnesses manage their own output length.</p>
         <select
           value={settings.default_verbosity || 'balanced'}
           onChange={(e) => updateSettings({ default_verbosity: e.target.value })}
@@ -386,6 +386,7 @@ function ContextSettings({
   availableFiles: { name: string; path: string }[]
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
+  const harnessActive = (settings.default_harness || 'none') !== 'none'
 
   // Group files by folder
   const groups: Record<string, typeof availableFiles> = {}
@@ -415,9 +416,13 @@ function ContextSettings({
   return (
     <div className="flex flex-col gap-8">
       <section className="border-b border-[var(--border-subtle)] pb-6">
+        <PromptsSettings />
+      </section>
+
+      <section className="border-b border-[var(--border-subtle)] pb-6">
         <h3 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Session Memory</h3>
         <p className="text-[12px] text-[var(--text-secondary)] mb-3">
-          Configure how previous conversation history and edits are carried forward.
+          How much past history travels with each request — prior chat turns and recent edits for endpoints, past conversation and recent edits for harnesses.
         </p>
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
@@ -435,33 +440,6 @@ function ContextSettings({
             </span>
           </div>
         </div>
-      </section>
-
-      <section>
-        <h3 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Include Document Structure</h3>
-        <p className="text-[12px] text-[var(--text-secondary)] mb-3">
-          Provide a structural outline (paragraph previews) of the active document to the AI planner. Helps the AI maintain broader story awareness, but consumes more memory. Keep off when using a smaller local AI for faster, more focused responses.
-        </p>
-        <label className="flex items-center gap-2 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={!!settings.planner_include_outline}
-            onChange={(e) => updateSettings({ planner_include_outline: e.target.checked })}
-            className="accent-[var(--accent-brown)]"
-          />
-          <span className="text-[13px] text-[var(--text-secondary)] font-medium">Send Document Outline to AI</span>
-        </label>
-      </section>
-
-      <section>
-        <h3 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Additional Context</h3>
-        <p className="text-[12px] text-[var(--text-secondary)] mb-3">Instructions prepended to the Chat and Writer agents.</p>
-        <textarea
-          value={settings.additional_context || ''}
-          onChange={(e) => updateSettings({ additional_context: e.target.value })}
-          className="w-full h-[120px] border border-[var(--border-subtle)] rounded-[6px] p-3 text-[13px] text-[var(--text)] bg-[var(--bg-input)] outline-none focus:border-[var(--text-secondary)] transition-colors resize-none font-sans leading-relaxed"
-          placeholder="E.g., Always use British spelling. Never use passive voice."
-        />
       </section>
 
       <section>
@@ -618,6 +596,24 @@ function ContextSettings({
       <p className="text-[11px] text-[var(--text-muted)] leading-relaxed -mt-4">
         Endpoint models only — agent harnesses read your workspace files directly.
       </p>
+
+      <section>
+        <h3 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Include Document Structure</h3>
+        <p className="text-[12px] text-[var(--text-secondary)] mb-3">
+          Provide a structural outline (paragraph previews) of the active document to the endpoint planner. Helps the AI maintain broader story awareness, but consumes more memory. Keep off when using a smaller local AI for faster, more focused responses.
+          {harnessActive && ' Disabled while a harness is the default — harnesses read the workspace directly.'}
+        </p>
+        <label className={`flex items-center gap-2 select-none ${harnessActive ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+          <input
+            type="checkbox"
+            checked={!!settings.planner_include_outline}
+            disabled={harnessActive}
+            onChange={(e) => updateSettings({ planner_include_outline: e.target.checked })}
+            className="accent-[var(--accent-brown)]"
+          />
+          <span className="text-[13px] text-[var(--text-secondary)] font-medium">Send Document Outline to AI</span>
+        </label>
+      </section>
     </div>
   )
 }
@@ -957,6 +953,10 @@ function HarnessesSettings({ settings, updateSettings }: { settings: AppSettings
     updateSettings({ harnesses: { ...(settings.harnesses || {}), [id]: { ...(settings.harnesses?.[id] || {}), model } } })
   }
 
+  const setContextWindow = (id: string, context_window: number | undefined) => {
+    updateSettings({ harnesses: { ...(settings.harnesses || {}), [id]: { ...(settings.harnesses?.[id] || {}), context_window } } })
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <section>
@@ -1022,6 +1022,14 @@ function HarnessesSettings({ settings, updateSettings }: { settings: AppSettings
                   harnessId={h.id}
                   value={settings.harnesses?.[h.id]?.model || ''}
                   onChange={(model) => setModel(h.id, model)}
+                />
+                <span className="text-[11px] text-[var(--text-muted)] shrink-0" title="Context window for the usage ring. Empty = hidden.">Ctx:</span>
+                <input
+                  type="number"
+                  placeholder="—"
+                  value={settings.harnesses?.[h.id]?.context_window ?? ''}
+                  onChange={(e) => setContextWindow(h.id, parseInt(e.target.value) || undefined)}
+                  className="w-[76px] border border-[var(--border-subtle)] rounded-[4px] px-2.5 py-1 text-[11px] bg-[var(--bg-input)] text-[var(--text)] outline-none focus:border-[var(--text-secondary)] font-mono shrink-0"
                 />
               </div>
             </div>
@@ -1089,5 +1097,105 @@ function HarnessModelPicker({ harnessId, value, onChange }: { harnessId: string;
       ))}
       <option value="__custom__">Custom...</option>
     </select>
+  )
+}
+
+const PROMPT_ENTRIES = [
+  { id: 'writer', file: 'simple-writer.md', label: 'Writer', description: 'Writes the replacement text for panel edits and inline Rewrite — endpoint path only.' },
+  { id: 'planner', file: 'simple-planner.md', label: 'Planner', description: 'Picks context files and refines the instruction for the Writer — endpoint path only.' },
+  { id: 'chat', file: 'simple-chat.md', label: 'Chat', description: 'Converses and answers — makes no edits, for endpoints and harnesses.' },
+  { id: 'harness-edit', file: 'harness-edit.md', label: 'Harness Edit', description: 'Standing instructions for agent harnesses in Edit mode (OpenCode, Claude Code, Codex, Antigravity) — including the rule that changes land in files, not in the reply.' },
+]
+
+function PromptsSettings() {
+  const [selectedId, setSelectedId] = useState('writer')
+  const [content, setContent] = useState('')
+  const [savedContent, setSavedContent] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const entry = PROMPT_ENTRIES.find(e => e.id === selectedId)!
+
+  useEffect(() => {
+    // Reset + fetch on prompt switch; matches the data-fetch pattern used elsewhere here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsLoading(true)
+    setError('')
+    fetch(`${API_BASE}/api/assist/prompts/${encodeURIComponent(entry.file)}`)
+      .then(res => {
+        if (!res.ok) throw new Error(`Could not load ${entry.file}`)
+        return res.json()
+      })
+      .then(data => {
+        setContent(data.content || '')
+        setSavedContent(data.content || '')
+      })
+      .catch(err => setError((err as Error).message))
+      .finally(() => setIsLoading(false))
+  }, [entry.file])
+
+  const dirty = content !== savedContent
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/assist/prompts/${encodeURIComponent(entry.file)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+      setSavedContent(content)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-8">
+      <section>
+        <h3 className="text-[13px] font-medium text-[var(--text-heading)] mb-1">Agent Prompts</h3>
+        <p className="text-[12px] text-[var(--text-secondary)] mb-3">Edit the instructions each agent runs on. Changes apply to the next request.</p>
+        <select
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
+          className="border border-[var(--border-subtle)] rounded-[6px] px-3 py-2 text-[13px] bg-[var(--bg-input)] text-[var(--text)] outline-none focus:border-[var(--text-secondary)] transition-colors w-[280px] mb-1"
+        >
+          {PROMPT_ENTRIES.map(e => (
+            <option key={e.id} value={e.id}>{e.label} — {e.file}</option>
+          ))}
+        </select>
+        <p className="text-[11px] text-[var(--text-muted)] mb-3">{entry.description}</p>
+        {isLoading ? (
+          <p className="text-[12px] text-[var(--text-muted)]">Loading {entry.file}...</p>
+        ) : (
+          <>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              spellCheck={false}
+              className="w-full h-[300px] border border-[var(--border-subtle)] rounded-[6px] p-3 text-[12px] text-[var(--text)] bg-[var(--bg-input)] outline-none focus:border-[var(--text-secondary)] transition-colors resize-y font-mono leading-relaxed"
+            />
+            <div className="flex items-center gap-3 mt-2">
+              <button
+                onClick={handleSave}
+                disabled={!dirty || isSaving}
+                className="px-3 py-1.5 text-[12px] bg-[var(--accent-brown)] text-[var(--text-inverse)] rounded-[4px] hover:bg-[var(--accent-brown-hover)] transition-colors disabled:opacity-50 cursor-pointer font-medium"
+              >
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+              {dirty
+                ? <span className="text-[11px] text-[var(--text-muted)]">Unsaved changes</span>
+                : <span className="text-[11px] text-[var(--text-accent)]">Saved</span>}
+              {error && <span className="text-[11px] text-red-500">{error}</span>}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
   )
 }

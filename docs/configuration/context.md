@@ -2,32 +2,17 @@
 
 Context settings control what information the AI receives about your project. This is the most important section -- getting context right is the key to useful AI assistance.
 
-> These settings apply to endpoint models only. Agent harnesses read your workspace files directly — see [Harnesses](./harnesses.md).
+> Most settings here apply to both endpoints and harnesses. The exceptions are noted per section — see [Harnesses](./harnesses.md).
+
+## Agent Prompts
+
+Edit the instructions each agent runs on (Writer, Planner, Chat, Harness Edit). Changes apply to the next request — see [Prompts](./prompts.md).
 
 ## Session Memory
 
 margin remembers your recent conversation turns (questions and AI responses) to keep the discussion coherent.
 
-- **Max History Depth**: Set between 1 and 10 turns. A higher number gives the AI more context but uses more tokens. The default of 5 works well for most conversations.
-
-## Include Document Structure
-
-When enabled, the AI receives a structural outline (paragraph previews) of your active document. This helps the Planner understand the broader story flow, but consumes more tokens.
-
-::: warning Consider turning this off if you're using a smaller local model. The outline can consume a significant portion of your context window.
-:::
-
-## Additional Context
-
-Write any extra instructions that should be prepended to every AI request. This is useful for persistent preferences:
-
-```
-Always use British spelling.
-Avoid passive voice.
-Keep paragraphs under 4 sentences.
-```
-
-These instructions are added automatically to the Writer and Chat agents. The Planner intentionally does not receive them.
+- **Max History Depth**: Set between 1 and 10 turns. A higher number gives the AI more context but uses more tokens. The default of 5 works well for most conversations. Applies to endpoint chat turns and planner history, and to harness runs (past conversation + recent edits travel in the harness prompt).
 
 ## Reference Files
 
@@ -42,3 +27,12 @@ The **Reference Files** panel lets you control which files in your workspace the
 Click a file's icon to cycle through the states.
 
 You can also block an entire folder -- all files within it become inaccessible to the AI. Blocked folders are shown with a red strikethrough in the panel.
+
+## Include Document Structure
+
+When enabled, the endpoint planner receives a structural outline (paragraph previews) of your active document. This helps the Planner understand the broader story flow, but consumes more tokens.
+
+Endpoint planner only — harnesses read the workspace directly, so the checkbox disables while a harness is the default. For persistent style rules, edit the agent prompts above instead.
+
+::: warning Consider turning this off if you're using a smaller local model. The outline can consume a significant portion of your context window.
+:::

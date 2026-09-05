@@ -10,6 +10,8 @@
   [![Node: 18+](https://img.shields.io/badge/Node-18+-green.svg)](https://nodejs.org/)
 
   An AI writing workspace with smart context management and deep customization.
+
+  Now supports [OpenCode](docs/configuration/harnesses.md) · [Claude Code](docs/configuration/harnesses.md) · [Codex](docs/configuration/harnesses.md) · [Antigravity](docs/configuration/harnesses.md)
 </div>
 
 Think of it as SillyTavern for writing: a customizable environment where writers can collaborate with context-aware AI agents, swap models, manage prompts, and build their own creative workflows—all while keeping their work on their own machine.
@@ -22,6 +24,7 @@ Instead of treating AI as a chat window, Margin integrates it directly into the 
 * **Runs Locally** — Your manuscripts, notes, and context stay on your machine. No required cloud services or telemetry.
 * **Optimized for Smaller Models** — Works well with lightweight language models and supports Ollama, LM Studio, and OpenAI-compatible providers.
 * **Agent Harnesses** — Supports OpenCode, Claude Code, Codex, or Antigravity with your own subscription; see [Harnesses](./docs/configuration/harnesses.md).
+* **Editable Prompts** — Tune the Writer, Planner, Chat, and Harness Edit instructions from Settings > Prompts; see [Prompts](./docs/configuration/prompts.md).
 * **Automatic Context Management** — Organize characters, lore, outlines, and style guides into folders. Margin automatically includes the relevant context for each task.
 * **Customizable AI Workflows** — Configure prompts, agents, and writing pipelines to match your process instead of adapting to rigid presets.
 * **Interactive Diff Review** — Review AI-generated edits with clear inline diffs before accepting or rejecting changes.
@@ -55,6 +58,8 @@ See the [Getting Started guide](docs/getting-started.md) for setup instructions,
 - [AI Assist](docs/ai-assist.md) — Edit and Chat modes, context window, reasoning
 - [Writing Guide](docs/writing-guide.md) — Dual-agent system, manifests, character profiles, workspace demo.
 - [Configuration](docs/configuration/general.md) — Workspace, appearance, editor, endpoints, context settings
+- [Harnesses](docs/configuration/harnesses.md) — Use your OpenCode, Claude Code, Codex, or Antigravity subscription
+- [Prompts](docs/configuration/prompts.md) — Edit the Writer, Planner, Chat, and Harness Edit instructions
 
 
 

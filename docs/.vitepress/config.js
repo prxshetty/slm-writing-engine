@@ -23,6 +23,8 @@ export default {
                             { text: 'Editor', link: '/configuration/editor' },
                             { text: 'Context', link: '/configuration/context' },
                             { text: 'Endpoints', link: '/configuration/endpoints' },
+                            { text: 'Harnesses', link: '/configuration/harnesses' },
+                            { text: 'Prompts', link: '/configuration/prompts' },
                             { text: 'Debugging', link: '/configuration/debugging' }
                         ]
                     },

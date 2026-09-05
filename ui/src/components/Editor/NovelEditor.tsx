@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { Markdown } from 'tiptap-markdown'
 import { WritingBubbleMenu } from './WritingBubbleMenu'
 import { AiDiffHighlightExtension } from './AiDiffHighlightExtension'
+import { reapplyHarnessHighlight } from '../../lib/applyHarnessResult'
 import { EditorState } from '@tiptap/pm/state'
 
 export function NovelEditor({ showInlinePopup = true }: { showInlinePopup?: boolean }) {
@@ -91,6 +92,10 @@ export function NovelEditor({ showInlinePopup = true }: { showInlinePopup?: bool
             plugins: editor.state.plugins,
           })
         )
+        // The rebuild resets every plugin's state — a pending harness diff
+        // highlight set just before this is wiped with it. Doc is unchanged,
+        // so the same block positions re-apply cleanly.
+        reapplyHarnessHighlight(editor)
         isProgrammaticUpdateRef.current = false
       }
     }
